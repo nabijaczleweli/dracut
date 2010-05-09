@@ -1,53 +1,24 @@
-dracut (2.26) unstable; urgency=low
+dracut (005-1) unstable; urgency=low
 
-  [ Harald Hoyer ]
-  * multipath: install udev rules and helper tools
-  * NEWS update
-  * multipath: install xdr utils
-  * multipath: install multipath kernel module
-  * specfile update
-  * dracut.8: fixed formatting for rootfs and mount options
-  * dracut: check more return codes, check for permissions and use
-    derror
-  * dracut: create initramfs-$(kernelversion).img by default
-  * Makefile: add WITH_SWITCH_ROOT
-  * fips: search different lib paths
-  * kernel-modules: add firewire-ohci to hardcoded modules list
-  * 90dm: install more device mapper kernel modules
-  * specfile update
+  * Version 005
+  * First dracut release to unstable. Closes: #558274
 
-  [ Peter Jones ]
-  * Use glob for libdir when installing multipath libraries.
-  * Add #!/bin/bash for consistency.
-  * Make sure and get all the multipath related modules.
-  * Bring up multipath devices that are configured in multipath.conf.
-  * Fix missing shell variables.
-  * This has to be executable.
-  * Handle modules with hyphens in their names properly.
+ -- Philippe Seewer <philippe.seewer@bfh.ch>  Fri, 9 May 2010 11:20:00 +0100
 
-  [ Harald Hoyer ]
-  * lvm: scan without monitor
+dracut (004-1) unreleased; urgency=low
 
-  [ Yanko Kaneti ]
-  * Wildcards need dracut_install
+  * Version 004
 
-  [ Harald Hoyer ]
-  * lvm/dmraid: make LIBDIR depend on the binary
-  * nfs: install passwd entries for nobody and nfsnobody
-  * nfs: add rd_NFS_DOMAIN parameter to set the NFSv4 domain name
-  * dracut-functions: inst_simple(): do not bail out if target is a dir
-    and exists
-  * dm: install dmsetup
-  * multipath: corrected initqueue parameter
-  * rootfs-block/mount-root: remount root with /etc/fstab filesystem
-    options
-  * test: set PATH
+ -- Philippe Seewer <philippe.seewer@bfh.ch>  Fri, 5 Mar 2010 15:25:00 +0100
 
- -- Philippe Seewer <philippe.seewer@.bfh.ch>  Fri, 27 Nov 2009 10:58:26 +0100
+dracut (003-1) unreleased; urgency=low
 
-dracut (2.21) unstable; urgency=low
-  [ Harald Hoyer ]
-  * fix rd_DASD argument handling (bug #531720)
-  * Resolves: rhbz#531720
+  * Version 003
 
- -- Philippe Seewer <philippe.seewer@.bfh.ch>  Fri, 06 Nov 2009 15:52:00 +0100
+ -- Philippe Seewer <philippe.seewer@bfh.ch>  Fri, 27 Nov 2009 15:52:00 +0100
+
+dracut (002-1) unreleased; urgency=low
+
+  * Version 002
+
+ -- Philippe Seewer <philippe.seewer@bfh.ch>  Fri, 27 Nov 2009 15:52:00 +0100
