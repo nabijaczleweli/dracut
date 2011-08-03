@@ -4,13 +4,13 @@ TEST_DESCRIPTION="root filesystem on an encrypted LVM PV on a degraded RAID-5"
 KVERSION=${KVERSION-$(uname -r)}
 
 # Uncomment this to debug failures
-#DEBUGFAIL="rdshell"
+DEBUGFAIL="rd.shell"
 
 client_run() {
     echo "CLIENT TEST START: $@"
     $testdir/run-qemu -hda root.ext2 -m 256M -nographic \
 	-net none -kernel /boot/vmlinuz-$KVERSION \
-	-append "$@ root=LABEL=root rw quiet rdinfo console=ttyS0,115200n81 selinux=0 rdinitdebug rdnetdebug $DEBUGFAIL " \
+	-append "$@ root=LABEL=root rw quiet rd.retry=3 rd.info console=ttyS0,115200n81 selinux=0 rd.debug  $DEBUGFAIL " \
 	-initrd initramfs.testing
     if ! grep -m 1 -q dracut-root-block-success root.ext2; then
 	echo "CLIENT TEST END: $@ [FAIL]"
@@ -27,39 +27,39 @@ test_run() {
     echo "MD_UUID=$MD_UUID"
 
     client_run || return 1
-    
-    client_run rd_NO_MDADMCONF || return 1
 
-    client_run rd_NO_LVM failme && return 1
+#    client_run rd.md.conf=0 || return 1
 
-    client_run rd_LVM_VG=failme failme && return 1
+    client_run rd.lvm=0 failme && return 1
 
-    client_run rd_LVM_VG=dracut || return 1
+    client_run rd.lvm.vg=failme failme && return 1
 
-    client_run rd_LVM_VG=dummy1 rd_LVM_VG=dracut rd_LVM_VG=dummy2 rd_NO_LVMCONF || return 1
+    client_run rd.lvm.vg=dracut || return 1
 
-    client_run rd_MD_UUID=failme rd_NO_MDADMCONF failme && return 1
+#    client_run rd.md.uuid=$MD_UUID rd.md.conf=0 || return 1
 
-    client_run rd_NO_MD failme && return 1
+    client_run rd.lvm.vg=dummy1 rd.lvm.vg=dracut rd.lvm.vg=dummy2 rd.lvm.conf=0 failme && return 1
 
-    client_run rd_MD_UUID=$MD_UUID rd_NO_MDADMCONF || return 1
+#    client_run rd.md.uuid=failme rd.md.conf=0 failme && return 1
 
-    client_run rd_MD_UUID=dummy1 rd_MD_UUID=$MD_UUID rd_MD_UUID=dummy2 rd_NO_MDADMCONF || return 1
+    client_run rd.md=0 failme && return 1
+
+#    client_run rd.md.uuid=dummy1 rd.md.uuid=$MD_UUID rd.md.uuid=dummy2 rd.md.conf=0 failme && return 1
 
     return 0
 }
 
 test_setup() {
     # Create the blank file to use as a root filesystem
-    dd if=/dev/zero of=root.ext2 bs=1M count=20
- 
+    dd if=/dev/zero of=root.ext2 bs=1M count=40
+
     kernel=$KVERSION
     # Create what will eventually be our root filesystem onto an overlay
     (
 	initdir=overlay/source
 	. $basedir/dracut-functions
 	dracut_install sh df free ls shutdown poweroff stty cat ps ln ip route \
-	    /lib/terminfo/l/linux mount dmesg ifconfig dhclient mkdir cp ping dhclient 
+	    /lib/terminfo/l/linux mount dmesg ifconfig dhclient mkdir cp ping dhclient
 	inst "$basedir/modules.d/40network/dhclient-script" "/sbin/dhclient-script"
 	inst "$basedir/modules.d/40network/ifup" "/sbin/ifup"
 	dracut_install grep
@@ -69,16 +69,16 @@ test_setup() {
 	cp -a /etc/ld.so.conf* $initdir/etc
 	sudo ldconfig -r "$initdir"
     )
- 
+
     # second, install the files needed to make the root filesystem
     (
 	initdir=overlay
 	. $basedir/dracut-functions
-	dracut_install sfdisk mke2fs poweroff cp umount dd
-	inst_simple ./create-root.sh /initqueue/01create-root.sh
+	dracut_install sfdisk mke2fs poweroff cp umount dd grep
+	inst_hook initqueue 01 ./create-root.sh
  	inst_simple ./99-idesymlinks.rules /etc/udev/rules.d/99-idesymlinks.rules
    )
- 
+
     # create an initramfs that will create the target root filesystem.
     # We do it this way so that we do not risk trashing the host mdraid
     # devices, volume groups, encrypted partitions, etc.
@@ -98,14 +98,14 @@ test_setup() {
 	initdir=overlay
 	. $basedir/dracut-functions
 	dracut_install poweroff shutdown
-	inst_simple ./hard-off.sh /emergency/01hard-off.sh
+	inst_hook emergency 000 ./hard-off.sh
 	inst_simple ./99-idesymlinks.rules /etc/udev/rules.d/99-idesymlinks.rules
 	inst ./cryptroot-ask /sbin/cryptroot-ask
         mkdir -p overlay/etc
         echo "ARRAY /dev/md0 level=raid5 num-devices=3 UUID=$MD_UUID" > overlay/etc/mdadm.conf
     )
     sudo $basedir/dracut -l -i overlay / \
-	-o "plymouth" \
+	-o "plymouth network" \
 	-a "debug" \
 	-d "piix ide-gd_mod ata_piix ext2 sd_mod" \
 	-f initramfs.testing $KVERSION || return 1

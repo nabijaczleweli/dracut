@@ -4,7 +4,9 @@ TEST_DESCRIPTION="root filesystem on NBD"
 KVERSION=${KVERSION-$(uname -r)}
 
 # Uncomment this to debug failures
-#DEBUGFAIL="rdshell"
+#DEBUGFAIL="rd.shell"
+#SERIAL="udp:127.0.0.1:9999"
+SERIAL="null"
 
 run_server() {
     # Start server first
@@ -13,8 +15,8 @@ run_server() {
     $testdir/run-qemu -hda server.ext2 -hdb nbd.ext2 -hdc encrypted.ext2 \
 	-m 256M -nographic \
 	-net nic,macaddr=52:54:00:12:34:56,model=e1000 \
-	-net socket,mcast=230.0.0.1:1236 \
-	-serial udp:127.0.0.1:9999 \
+	-net socket,listen=127.0.0.1:12345 \
+	-serial $SERIAL \
 	-kernel /boot/vmlinuz-$KVERSION \
 	-append "root=/dev/sda rw quiet console=ttyS0,115200n81 selinux=0" \
 	-initrd initramfs.server -pidfile server.pid -daemonize || return 1
@@ -48,9 +50,9 @@ client_test() {
 
     $testdir/run-qemu -hda flag.img -m 256M -nographic \
 	-net nic,macaddr=$mac,model=e1000 \
-	-net socket,mcast=230.0.0.1:1236 \
+	-net socket,connect=127.0.0.1:12345 \
 	-kernel /boot/vmlinuz-$KVERSION \
-	-append "$cmdline $DEBUGFAIL rdinitdebug rdinfo rdnetdebug ro quiet console=ttyS0,115200n81 selinux=0" \
+	-append "$cmdline $DEBUGFAIL rd.debug rd.info  ro quiet console=ttyS0,115200n81 selinux=0" \
 	-initrd initramfs.testing
 
     if [[ $? -ne 0 ]] || ! grep -m 1 -q nbd-OK flag.img; then
@@ -84,10 +86,15 @@ client_test() {
 }
 
 test_run() {
+    modinfo nbd &>/dev/null || { echo "Kernel does not support nbd"; exit 1; }
     if ! run_server; then
 	echo "Failed to start server" 1>&2
 	return 1
     fi
+    client_run || { kill_server; return 1; }
+}
+
+client_run() {
 
     # The default is ext3,errors=continue so use that to determine
     # if our options were parsed and used
@@ -191,7 +198,7 @@ make_encrypted_root() {
 	initdir=overlay
 	. $basedir/dracut-functions
 	dracut_install mke2fs poweroff cp umount
-	inst_simple ./create-root.sh /initqueue/01create-root.sh
+	inst_hook initqueue 01 ./create-root.sh
 	inst_simple ./99-idesymlinks.rules /etc/udev/rules.d/99-idesymlinks.rules
     )
 
@@ -258,7 +265,7 @@ make_server_root() {
 	dracut_install sh ls shutdown poweroff stty cat ps ln ip \
 	    /lib/terminfo/l/linux dmesg mkdir cp ping grep \
 	    sleep nbd-server chmod
-	which dhcpd >/dev/null 2>&1 && dracut_install dhcpd
+	type -P dhcpd >/dev/null && dracut_install dhcpd
 	[ -x /usr/sbin/dhcpd3 ] && inst /usr/sbin/dhcpd3 /usr/sbin/dhcpd
 	inst ./server-init /sbin/init
 	inst ./hosts /etc/hosts
@@ -283,6 +290,9 @@ make_server_root() {
 }
 
 test_setup() {
+
+    modinfo nbd &>/dev/null || { echo "Kernel does not support nbd"; exit 1; }
+
     make_encrypted_root || return 1
     make_client_root || return 1
     make_server_root || return 1
@@ -292,7 +302,7 @@ test_setup() {
 	initdir=overlay
 	. $basedir/dracut-functions
 	dracut_install poweroff shutdown
-	inst_simple ./hard-off.sh /emergency/01hard-off.sh
+	inst_hook emergency 000 ./hard-off.sh
 	inst_simple ./99-idesymlinks.rules /etc/udev/rules.d/99-idesymlinks.rules
 	inst ./cryptroot-ask /sbin/cryptroot-ask
     )
@@ -309,11 +319,15 @@ test_setup() {
 	-f initramfs.testing $KVERSION || return 1
 }
 
-test_cleanup() {
+kill_server() {
     if [[ -s server.pid ]]; then
 	sudo kill -TERM $(cat server.pid)
 	rm -f server.pid
     fi
+}
+
+test_cleanup() {
+    kill_server
     rm -fr overlay mnt
     rm -f flag.img server.ext2 nbd.ext2 encrypted.ext2
     rm -f initramfs.server initramfs.testing initramfs.makeroot

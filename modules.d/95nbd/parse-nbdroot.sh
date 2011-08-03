@@ -1,10 +1,12 @@
 #!/bin/sh
+# -*- mode: shell-script; indent-tabs-mode: nil; sh-basic-offset: 4; -*-
+# ex: ts=8 sw=4 sts=4 et filetype=sh
 #
 # Preferred format:
-#	root=nbd:srv:port[:fstype[:rootflags[:nbdopts]]]
-#	[root=*] netroot=nbd:srv:port[:fstype[:rootflags[:nbdopts]]]
+#       root=nbd:srv:port[:fstype[:rootflags[:nbdopts]]]
+#       [root=*] netroot=nbd:srv:port[:fstype[:rootflags[:nbdopts]]]
 #
-# nbdopts is a comma seperated list of options to give to nbd-client
+# nbdopts is a comma separated list of options to give to nbd-client
 #
 # root= takes precedence over netroot= if root=nbd[...]
 #
@@ -18,7 +20,7 @@ netroot_to_var() {
         v=${v#*:}
     done
 
-    unset server port 
+    unset server port
     server=$2; port=$3;
 }
 
@@ -32,7 +34,7 @@ netroot_to_var() {
 # Root takes precedence over netroot
 if [ "${root%%:*}" = "nbd" ] ; then
     if [ -n "$netroot" ] ; then
-	warn "root takes precedence over netroot. Ignoring netroot"
+        warn "root takes precedence over netroot. Ignoring netroot"
 
     fi
     netroot=$root
@@ -55,5 +57,5 @@ rootok=1
 # Shut up init error check
 [ -z "$root" ] && root="nbd"
 
-echo '[ -e /dev/root ]' > /initqueue-finished/nbd.sh
+echo '[ -e /dev/root ]' > $hookdir/initqueue/finished/nbd.sh
 

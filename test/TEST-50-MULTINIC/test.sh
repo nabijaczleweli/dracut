@@ -4,7 +4,9 @@ TEST_DESCRIPTION="root filesystem on NFS with multiple nics"
 KVERSION=${KVERSION-$(uname -r)}
 
 # Uncomment this to debug failures
-#DEBUGFAIL="rdshell"
+#DEBUGFAIL="rd.shell"
+#SERIAL="udp:127.0.0.1:9999"
+SERIAL="null"
 
 run_server() {
     # Start server first
@@ -12,10 +14,10 @@ run_server() {
 
     $testdir/run-qemu -hda server.ext2 -m 256M -nographic \
 	-net nic,macaddr=52:54:00:12:34:56,model=e1000 \
-	-net socket,mcast=230.0.0.1:1234 \
-	-serial udp:127.0.0.1:9999 \
+	-net socket,listen=127.0.0.1:12345 \
+	-serial $SERIAL \
 	-kernel /boot/vmlinuz-$KVERSION \
-	-append "selinux=0 root=/dev/sda rdinitdebug rdinfo rdnetdebug rw quiet console=ttyS0,115200n81" \
+	-append "selinux=0 root=/dev/sda rd.debug rd.info  rw quiet console=ttyS0,115200n81" \
 	-initrd initramfs.server -pidfile server.pid -daemonize || return 1
     sudo chmod 644 server.pid || return 1
 
@@ -46,9 +48,10 @@ client_test() {
   	-net nic,macaddr=52:54:00:12:34:$mac1,model=e1000 \
   	-net nic,macaddr=52:54:00:12:34:$mac2,model=e1000 \
   	-net nic,macaddr=52:54:00:12:34:$mac3,model=e1000 \
-  	-net socket,mcast=230.0.0.1:1234 \
+	-net socket,connect=127.0.0.1:12345 \
+        -hdc /dev/null \
   	-kernel /boot/vmlinuz-$KVERSION \
-  	-append "$cmdline $DEBUGFAIL rdinitdebug rdinfo rdnetdebug ro quiet console=ttyS0,115200n81 selinux=0 rdshell rdcopystate" \
+  	-append "$cmdline $DEBUGFAIL rd.retry=5 rd.debug rd.info  ro quiet console=ttyS0,115200n81 selinux=0 rd.copystate" \
   	-initrd initramfs.testing
 
     if [[ $? -ne 0 ]] || ! grep -m 1 -q OK client.img; then
@@ -75,7 +78,10 @@ test_run() {
 	echo "Failed to start server" 1>&2
 	return 1
     fi
+    test_client || { kill_server; return 1; }
+}
 
+test_client() {
     # Mac Numbering Scheme
     # ...:00-02 receive IP adresses all others don't
     # ...:02 receives a dhcp root-path
@@ -109,6 +115,9 @@ test_run() {
 	00 01 02 \
 	"root=dhcp ip=eth0:dhcp ip=eth1:dhcp ip=eth2:dhcp bootdev=eth2" \
 	"eth0 eth1 eth2" || return 1
+
+    kill_server
+    return 0
 }
 
 test_setup() {
@@ -126,10 +135,10 @@ test_setup() {
  	    /lib/terminfo/l/linux dmesg mkdir cp ping exportfs \
  	    modprobe rpc.nfsd rpc.mountd showmount tcpdump \
  	    /etc/services sleep mount chmod
- 	which portmap >/dev/null 2>&1 && dracut_install portmap
- 	which rpcbind >/dev/null 2>&1 && dracut_install rpcbind
- 	[ -f /etc/netconfig ] && dracut_install /etc/netconfig 
- 	which dhcpd >/dev/null 2>&1 && dracut_install dhcpd
+ 	type -P portmap >/dev/null && dracut_install portmap
+ 	type -P rpcbind >/dev/null && dracut_install rpcbind
+ 	[ -f /etc/netconfig ] && dracut_install /etc/netconfig
+ 	type -P dhcpd >/dev/null && dracut_install dhcpd
  	[ -x /usr/sbin/dhcpd3 ] && inst /usr/sbin/dhcpd3 /usr/sbin/dhcpd
  	instmods nfsd sunrpc ipv6
  	inst ./server-init /sbin/init
@@ -138,14 +147,23 @@ test_setup() {
  	inst ./dhcpd.conf /etc/dhcpd.conf
  	dracut_install /etc/nsswitch.conf /etc/rpc /etc/protocols
  	dracut_install rpc.idmapd /etc/idmapd.conf
- 	if ldd $(which rpc.idmapd) |grep -q lib64; then
+ 	if ldd $(type -P rpc.idmapd) |grep -q lib64; then
  	    LIBDIR="/lib64"
  	else
  	    LIBDIR="/lib"
  	fi
 
  	dracut_install $(ls {/usr,}$LIBDIR/libnfsidmap*.so* 2>/dev/null )
+ 	dracut_install $(ls {/usr,}$LIBDIR/libnfsidmap/*.so 2>/dev/null )
  	dracut_install $(ls {/usr,}$LIBDIR/libnss*.so 2>/dev/null)
+
+
+	nsslibs=$(sed -e '/^#/d' -e 's/^.*://' -e 's/\[NOTFOUND=return\]//' /etc/nsswitch.conf \
+              |  tr -s '[:space:]' '\n' | sort -u | tr -s '[:space:]' '|')
+	nsslibs=${nsslibs#|}
+	nsslibs=${nsslibs%|}
+
+	dracut_install $(for i in $(ls {/usr,}$LIBDIR/libnss*.so 2>/dev/null); do echo $i;done | egrep "$nsslibs")
  	(
  	    cd "$initdir";
  	    mkdir -p dev sys proc etc var/run tmp var/lib/{dhcpd,rpcbind}
@@ -172,11 +190,11 @@ test_setup() {
  	. $basedir/dracut-functions
  	dracut_install sh shutdown poweroff stty cat ps ln ip \
          	/lib/terminfo/l/linux mount dmesg mkdir \
- 		cp ping grep
+ 		cp ping grep ls
  	inst ./client-init /sbin/init
  	(
  	    cd "$initdir"
- 	    mkdir -p dev sys proc etc
+ 	    mkdir -p dev sys proc etc run
  	    mkdir -p var/lib/nfs/rpc_pipefs
 	)
  	inst /etc/nsswitch.conf /etc/nsswitch.conf
@@ -199,7 +217,7 @@ test_setup() {
  	mkdir overlay
  	. $basedir/dracut-functions
  	dracut_install poweroff shutdown
- 	inst_simple ./hard-off.sh /emergency/01hard-off.sh
+ 	inst_hook emergency 000 ./hard-off.sh
 	inst_simple ./99-idesymlinks.rules /etc/udev/rules.d/99-idesymlinks.rules
     )
 
@@ -213,15 +231,18 @@ test_setup() {
     $basedir/dracut -l -i overlay / \
 	-o "plymouth" \
 	-a "debug" \
-	-d "piix ide-gd_mod e1000 nfs sunrpc" \
+	-d "piix sd_mod sr_mod ata_piix ide-gd_mod e1000 nfs sunrpc" \
 	-f initramfs.testing $KVERSION || return 1
 }
 
-test_cleanup() {
+kill_server() {
     if [[ -s server.pid ]]; then
 	sudo kill -TERM $(cat server.pid)
 	rm -f server.pid
     fi
+}
+
+test_cleanup() {
     rm -rf mnt overlay
     rm -f server.ext2 client.img initramfs.server initramfs.testing
 }

@@ -1,52 +1,56 @@
 #!/bin/sh
+# -*- mode: shell-script; indent-tabs-mode: nil; sh-basic-offset: 4; -*-
+# ex: ts=8 sw=4 sts=4 et filetype=sh
 #
 # We don't need to check for ip= errors here, that is handled by the
 # cmdline parser script
 #
-PATH=$PATH:/sbin:/usr/sbin
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-. /lib/dracut-lib.sh
+type getarg >/dev/null 2>&1 || . /lib/dracut-lib.sh
 
 # Run dhclient
 do_dhcp() {
-    # /sbin/dhclient-script will mark the netif up and generate the online
+    # dhclient-script will mark the netif up and generate the online
     # event for nfsroot
     # XXX add -V vendor class and option parsing per kernel
-    dhclient "$@" -1 -q -cf /etc/dhclient.conf -pf /tmp/dhclient.$netif.pid -lf /tmp/dhclient.$netif.lease $netif
+    echo "Starting dhcp for interface $netif"
+    dhclient "$@" -1 -q -cf /etc/dhclient.conf -pf /tmp/dhclient.$netif.pid -lf /tmp/dhclient.$netif.lease $netif \
+        || echo "dhcp failed"
 }
 
 load_ipv6() {
     modprobe ipv6
     i=0
     while [ ! -d /proc/sys/net/ipv6 ]; do
-	i=$(($i+1))
-	[ $i -gt 10 ] && break
-	sleep 0.1
+        i=$(($i+1))
+        [ $i -gt 10 ] && break
+        sleep 0.1
     done
 }
 
 do_ipv6auto() {
     load_ipv6
     {
-        echo 0 > /proc/sys/net/ipv6/conf/$netif/forwarding 
+        echo 0 > /proc/sys/net/ipv6/conf/$netif/forwarding
         echo 1 > /proc/sys/net/ipv6/conf/$netif/accept_ra
         echo 1 > /proc/sys/net/ipv6/conf/$netif/accept_redirects
-	echo ip link set $netif up 
-	echo wait_for_if_up $netif
+        echo ip link set $netif up
+        echo wait_for_if_up $netif
     } > /tmp/net.$netif.up
 
     [ -n "$hostname" ] && echo "echo $hostname > /proc/sys/kernel/hostname" > /tmp/net.$netif.hostname
 
     namesrv=$(getargs nameserver)
     if  [ -n "$namesrv" ] ; then
-	for s in $namesrv; do
-	    echo nameserver $s 
-	done
+        for s in $namesrv; do
+            echo nameserver $s
+        done
     fi >> /tmp/net.$netif.resolv.conf
 
 
     echo online > /sys/class/net/$netif/uevent
-    /sbin/initqueue --onetime --name netroot-$netif  /sbin/netroot $netif 
+    initqueue --onetime --name netroot-$netif netroot $netif
 }
 
 # Handle static ip configuration
@@ -54,12 +58,12 @@ do_static() {
     strstr $ip '*:*:*' && load_ipv6
 
     {
-	echo ip link set $netif up 
-	echo wait_for_if_up $netif
-	# do not flush addr for ipv6
-	strstr $ip '*:*:*' || \
-	    echo ip addr flush dev $netif
-	echo ip addr add $ip/$mask dev $netif
+        echo ip link set $netif up
+        echo wait_for_if_up $netif
+        # do not flush addr for ipv6
+        strstr $ip '*:*:*' || \
+            echo ip addr flush dev $netif
+        echo ip addr add $ip/$mask dev $netif
     } > /tmp/net.$netif.up
 
     [ -n "$gw" ] && echo ip route add default via $gw dev $netif > /tmp/net.$netif.gw
@@ -67,24 +71,18 @@ do_static() {
 
     namesrv=$(getargs nameserver)
     if  [ -n "$namesrv" ] ; then
-	for s in $namesrv; do
-	    echo nameserver $s 
-	done
+        for s in $namesrv; do
+            echo nameserver $s
+        done
     fi >> /tmp/net.$netif.resolv.conf
 
     echo online > /sys/class/net/$netif/uevent
-    /sbin/initqueue --onetime --name netroot-$netif  /sbin/netroot $netif 
+    initqueue --onetime --name netroot-$netif netroot $netif
 }
 
-PATH=$PATH:/sbin:/usr/sbin
-
-. /lib/dracut-lib.sh
-
-if getarg rdnetdebug ; then
-    exec >/tmp/ifup.$1.$$.out
-    exec 2>>/tmp/ifup.$1.$$.out
-    set -x
-fi
+export PS4="ifup.$1.$$ + "
+exec >>/run/initramfs/loginit.pipe 2>>/run/initramfs/loginit.pipe
+type getarg >/dev/null 2>&1 || . /lib/dracut-lib.sh
 
 # Huh? No $1?
 [ -z "$1" ] && exit 1
@@ -92,11 +90,25 @@ fi
 # $netif reads easier than $1
 netif=$1
 
+# enslave this interface to bond?
+if [ -e /tmp/bond.info ]; then
+    . /tmp/bond.info
+    for slave in $bondslaves ; do
+        if [ "$netif" = "$slave" ] ; then
+            netif=$bondname
+        fi
+    done
+fi
+
 # bridge this interface?
 if [ -e /tmp/bridge.info ]; then
     . /tmp/bridge.info
     if [ "$netif" = "$ethname" ]; then
-        netif="$bridgename"
+        if [ "$netif" = "$bondname" ] && [ -n "$DO_BOND_SETUP" ] ; then
+            : # We need to really setup bond (recursive call)
+        else
+            netif="$bridgename"
+        fi
     fi
 fi
 
@@ -115,11 +127,62 @@ if [ "$netif" = "lo" ] ; then
     exit 0
 fi
 
+# start bond if needed
+if [ -e /tmp/bond.info ]; then
+    . /tmp/bond.info
+
+    if [ "$netif" = "$bondname" ] && [ ! -e /tmp/net.$bondname.up ] ; then # We are master bond device
+        modprobe bonding
+        ip link set $netif down
+
+        # Stolen from ifup-eth
+        # add the bits to setup driver parameters here
+        for arg in $bondoptions ; do
+            key=${arg%%=*};
+            value=${arg##*=};
+            # %{value:0:1} is replaced with non-bash specific construct
+            if [ "${key}" = "arp_ip_target" -a "${#value}" != "0" -a "+${value%%+*}" != "+" ]; then
+                OLDIFS=$IFS;
+                IFS=',';
+                for arp_ip in $value; do
+                    echo +$arp_ip > /sys/class/net/${netif}/bonding/$key
+                done
+                IFS=$OLDIFS;
+            else
+                echo $value > /sys/class/net/${netif}/bonding/$key
+            fi
+        done
+
+        ip link set $netif up
+
+        for slave in $bondslaves ; do
+            ip link set $slave down
+            ifenslave $bondname $slave
+            ip link set $slave up
+            wait_for_if_up $slave
+        done
+
+        # add the bits to setup the needed post enslavement parameters
+        for arg in $BONDING_OPTS ; do
+            key=${arg%%=*};
+            value=${arg##*=};
+            if [ "${key}" = "primary" ]; then
+                echo $value > /sys/class/net/${netif}/bonding/$key
+            fi
+        done
+    fi
+fi
+
+
 # XXX need error handling like dhclient-script
 
 # start bridge if necessary
 if [ "$netif" = "$bridgename" ] && [ ! -e /tmp/net.$bridgename.up ]; then
-    ip link set $ethname up
+    if [ "$ethname" = "$bondname" ] ; then
+        DO_BOND_SETUP=yes ifup $bondname
+    else
+        ip link set $ethname up
+    fi
     wait_for_if_up $ethname
     # Create bridge and add eth to bridge
     brctl addbr $bridgename
@@ -132,9 +195,9 @@ ip=$(getarg ip)
 
 if [ -z "$ip" ]; then
     if [ "$netroot" = "dhcp6" ]; then
-	do_dhcp -6
+        do_dhcp -6
     else
-	do_dhcp -4
+        do_dhcp -4
     fi
 fi
 
@@ -142,24 +205,26 @@ fi
 # looking for ip= lines
 for p in $(getargs ip=); do
     ip_to_var $p
+    # skip ibft
+    [ "$autoconf" = "ibft" ] && continue
 	
     # If this option isn't directed at our interface, skip it
     [ -n "$dev" ] && [ "$dev" != "$netif" ] && continue
 
     # Store config for later use
     for i in ip srv gw mask hostname; do
-	eval '[ "$'$i'" ] && echo '$i'="$'$i'"'
+        eval '[ "$'$i'" ] && echo '$i'="$'$i'"'
     done > /tmp/net.$netif.override
 
     case $autoconf in
-	dhcp|on|any)
-	    do_dhcp -4 ;;
-	dhcp6)
-	    do_dhcp -6 ;;
-	auto6)
-	    do_ipv6auto ;;
-        *) 
-	    do_static ;;
+        dhcp|on|any)
+            do_dhcp -4 ;;
+        dhcp6)
+            do_dhcp -6 ;;
+        auto6)
+            do_ipv6auto ;;
+        *)
+            do_static ;;
     esac
     break
 done

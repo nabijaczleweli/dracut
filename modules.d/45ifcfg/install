@@ -1,2 +1,0 @@
-#!/bin/bash
-inst_hook pre-pivot 85 "$moddir/write-ifcfg.sh"

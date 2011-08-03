@@ -1,13 +1,17 @@
-Format-Specification: http://svn.debian.org/wsvn/dep/web/deps/dep5.mdwn?op=file&rev=135
+Format-Specification: http://dep.debian.net/deps/dep5/
 Name: dracut
 Maintainer: Harald Hoyer <harald@redhat.com>
-Source: https://sourceforge.net/projects/dracut/
+Source: http://www.kernel.org/pub/linux/utils/boot/dracut/
 
 Copyright: 2009, Harald Hoyer <harald@redhat.com>
 License: GPL-2+
 
 Files: debian/*
 Copyright: 2009, Philippe Seewer <philippe.seewer@bfh.ch>
+License: GPL-2+
+
+Files: debian/*
+Copyright: 2011 Thomas Lange <lange@informatik.uni-koeln.de>
 License: GPL-2+
 
 License: GPL-2+

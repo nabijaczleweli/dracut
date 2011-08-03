@@ -1,11 +1,12 @@
 Source: dracut
 Section: utils
 Priority: optional
-Maintainer: Philippe Seewer <philippe.seewer@bfh.ch>
-Build-Depends: debhelper (>= 5.0), cdbs
-Standards-Version: 3.8.4
-Vcs-Browser: http://dracut.git.sourceforge.net/git/gitweb-index.cgi
-Vcs-Git: git://dracut.git.sourceforge.net/gitroot/dracut/dracut
+Maintainer: Thomas Lange <lange@debian.org>
+Build-Depends: debhelper
+Standards-Version: 3.9.1
+Vcs-Browser: http://anonscm.debian.org/git/collab-maint/dracut.git
+Vcs-Git: git://anonscm.debian.org/collab-maint/dracut.git
+Homepage: http://www.kernel.org/pub/linux/utils/boot/dracut/dracut.html
 
 Package: dracut
 Architecture: all
@@ -13,21 +14,29 @@ Recommends: cryptsetup, dmsetup, dmraid, lvm2, mdadm
 Suggests: dracut-network
 Depends: cpio, module-init-tools, udev, ${misc:Depends}
 Provides: linux-initramfs-tool
-Description: modular, event-driven initramfs infrastructure
- This package contains tools to create a
- bootable initramfs for 2.6 Linux kernels. Unlike existing
- implementations, this is an attempt at having as little as
- possible hard-coded into the initramfs as possible. Therefore,
- instead of scripts hard-coded to do various things, dracut
- contains various modules which contribute functionality to
- udev, which handles device creation. Having the root on MD,
- LVM2, LUKS is supported as well as NFS, iSCSI, NBD and FCOE
- with dracut-network.
+Description: A new initramfs infrastructure
+ Unlike existing initramfs's, this is an attempt at having as little as
+ possible hard-coded into the initramfs as possible.  The initramfs has
+ (basically) one purpose in life -- getting the rootfs mounted so that
+ we can transition to the real rootfs.  This is all driven off of
+ device availability.  Therefore, instead of scripts hard-coded to do
+ various things, we depend on udev to create device nodes for us and
+ then when we have the rootfs's device node, we mount and carry on. 
+ Having the root on MD, LVM2, LUKS is supported as well as NFS, iSCSI,
+ NBD and FCOE with dracut-network.
 
 Package: dracut-network
 Architecture: all
 Recommends: nfs-common, open-iscsi, nbd-client
-Depends: dracut, iputils-arping, dhcp3-client, ${misc:Depends}
-Description: modular, event-driven initramfs infrastructure -- network support
- This package extends dracut with support for booting off NFS, iSCSI,
- NBD or FCOE.
+Depends: dracut, iputils-arping, isc-dhcp-client, ${misc:Depends}
+Description: A new initramfs infrastucture
+ Unlike existing initramfs's, this is an attempt at having as little as
+ possible hard-coded into the initramfs as possible.  The initramfs has
+ (basically) one purpose in life -- getting the rootfs mounted so that
+ we can transition to the real rootfs.  This is all driven off of
+ device availability.  Therefore, instead of scripts hard-coded to do
+ various things, we depend on udev to create device nodes for us and
+ then when we have the rootfs's device node, we mount and carry on. 
+ Having the root on MD, LVM2, LUKS is supported as well as NFS, iSCSI,
+ NBD and FCOE with dracut-network.
+

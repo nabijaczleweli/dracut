@@ -6,11 +6,11 @@ done
 rm /etc/lvm/lvm.conf
 udevadm control --reload-rules
 # save a partition at the beginning for future flagging purposes
-sfdisk -C 640 -H 2 -S 32 -L /dev/sda <<EOF
-,1
-,213
-,213
-,213
+sfdisk -C 1280 -H 2 -S 32 -L /dev/sda <<EOF
+,16
+,400
+,400
+,400
 EOF
 mdadm --create /dev/md0 --run --auto=yes --level=5 --raid-devices=3 /dev/sda2 /dev/sda3 /dev/sda4
 # wait for the array to finish initailizing, otherwise this sometimes fails
@@ -35,12 +35,12 @@ cryptsetup luksClose /dev/mapper/dracut_crypt_test && \
 mdadm /dev/md0 --fail /dev/sda2 --remove /dev/sda2 && \
 { mdadm -W /dev/md0 || : ;} && \
 {
-/sbin/mdadm --detail --export /dev/md0 > /tmp/mduuid ;
+/sbin/mdadm --detail --export /dev/md0 |grep MD_UUID > /tmp/mduuid ;
 . /tmp/mduuid;
 } && \
 {
-echo "dracut-root-block-created" 
-echo MD_UUID=$MD_UUID 
+echo "dracut-root-block-created"
+echo MD_UUID=$MD_UUID
 }> /dev/sda1
 dd if=/dev/zero of=/dev/sda2
 poweroff -f

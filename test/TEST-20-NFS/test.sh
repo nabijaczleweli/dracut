@@ -4,7 +4,9 @@ TEST_DESCRIPTION="root filesystem on NFS"
 KVERSION=${KVERSION-$(uname -r)}
 
 # Uncomment this to debug failures
-#DEBUGFAIL="rdshell"
+#DEBUGFAIL="rd.shell"
+#SERIAL="-serial udp:127.0.0.1:9999"
+SERIAL="null"
 
 run_server() {
     # Start server first
@@ -12,8 +14,8 @@ run_server() {
 
     $testdir/run-qemu -hda server.ext2 -m 256M -nographic \
 	-net nic,macaddr=52:54:00:12:34:56,model=e1000 \
-	-net socket,mcast=230.0.0.1:1234 \
-	-serial udp:127.0.0.1:9999 \
+	-net socket,listen=127.0.0.1:12345 \
+	-serial $SERIAL \
 	-kernel /boot/vmlinuz-$KVERSION \
 	-append "root=/dev/sda rw quiet console=ttyS0,115200n81 selinux=0" \
 	-initrd initramfs.server -pidfile server.pid -daemonize || return 1
@@ -44,9 +46,9 @@ client_test() {
 
     $testdir/run-qemu -hda client.img -m 256M -nographic \
   	-net nic,macaddr=$mac,model=e1000 \
-  	-net socket,mcast=230.0.0.1:1234 \
+	-net socket,connect=127.0.0.1:12345 \
   	-kernel /boot/vmlinuz-$KVERSION \
-  	-append "$cmdline $DEBUGFAIL rdinitdebug rdinfo quiet rdnetdebug ro console=ttyS0,115200n81 selinux=0" \
+  	-append "$cmdline $DEBUGFAIL rd.debug rd.retry=10 rd.info quiet  ro console=ttyS0,115200n81 selinux=0" \
   	-initrd initramfs.testing
 
     if [[ $? -ne 0 ]] || ! grep -m 1 -q nfs-OK client.img; then
@@ -55,7 +57,7 @@ client_test() {
     fi
 
     # nfsinfo=( server:/path nfs{,4} options )
-    nfsinfo=($(awk '{print $2, $3, $4; exit}' client.img)) 
+    nfsinfo=($(awk '{print $2, $3, $4; exit}' client.img))
 
     if [[ "${nfsinfo[0]%%:*}" != "$server" ]]; then
 	echo "CLIENT TEST INFO: got server: ${nfsinfo[0]%%:*}"
@@ -178,12 +180,17 @@ test_run() {
 	return 1
     fi
 
-    test_nfsv3 || return 1
-    test_nfsv4
+    test_nfsv3 && \
+	test_nfsv4
+
+    ret=$?
+
     if [[ -s server.pid ]]; then
 	sudo kill -TERM $(cat server.pid)
 	rm -f server.pid
     fi
+
+    return $ret
 }
 
 test_setup() {
@@ -201,10 +208,10 @@ test_setup() {
 	    /lib/terminfo/l/linux dmesg mkdir cp ping exportfs \
 	    modprobe rpc.nfsd rpc.mountd showmount tcpdump \
 	    /etc/services sleep mount chmod
-	which portmap >/dev/null 2>&1 && dracut_install portmap
-	which rpcbind >/dev/null 2>&1 && dracut_install rpcbind
-	[ -f /etc/netconfig ] && dracut_install /etc/netconfig 
-	which dhcpd >/dev/null 2>&1 && dracut_install dhcpd
+	type -P portmap >/dev/null && dracut_install portmap
+	type -P rpcbind >/dev/null && dracut_install rpcbind
+	[ -f /etc/netconfig ] && dracut_install /etc/netconfig
+	type -P dhcpd >/dev/null && dracut_install dhcpd
 	[ -x /usr/sbin/dhcpd3 ] && inst /usr/sbin/dhcpd3 /usr/sbin/dhcpd
 	instmods nfsd sunrpc ipv6
 	inst ./server-init /sbin/init
@@ -213,7 +220,7 @@ test_setup() {
 	inst ./dhcpd.conf /etc/dhcpd.conf
 	dracut_install /etc/nsswitch.conf /etc/rpc /etc/protocols
 	dracut_install rpc.idmapd /etc/idmapd.conf
-	if ldd $(which rpc.idmapd) |grep -q lib64; then
+	if ldd $(type -P rpc.idmapd) |grep -q lib64; then
 	    LIBDIR="/lib64"
 	else
 	    LIBDIR="/lib"
@@ -278,7 +285,7 @@ test_setup() {
 	mkdir overlay
 	. $basedir/dracut-functions
 	dracut_install poweroff shutdown
-	inst_simple ./hard-off.sh /emergency/01hard-off.sh
+	inst_hook emergency 000 ./hard-off.sh
 	inst_simple ./99-idesymlinks.rules /etc/udev/rules.d/99-idesymlinks.rules
     )
 

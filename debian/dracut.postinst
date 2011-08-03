@@ -3,6 +3,6 @@
 set -e
 
 # Regenerate initramfs when we're `installed`
-DPKG_MAINTSCRIPT_PACKAGE='' dracut-update-initramfs -u
+/etc/kernel/postinst.d/dracut `uname -r`
 
 #DEBHELPER#

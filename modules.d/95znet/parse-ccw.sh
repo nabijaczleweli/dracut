@@ -1,5 +1,8 @@
 #!/bin/sh
-for ccw_arg in $(getargs 'rd_CCW='); do
+# -*- mode: shell-script; indent-tabs-mode: nil; sh-basic-offset: 4; -*-
+# ex: ts=8 sw=4 sts=4 et filetype=sh
+
+for ccw_arg in $(getargs rd.ccw 'rd_CCW=') $(getargs rd.znet 'rd_ZNET='); do
     echo $ccw_arg >> /etc/ccw.conf
 done
 
