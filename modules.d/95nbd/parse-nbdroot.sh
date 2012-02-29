@@ -24,20 +24,22 @@ netroot_to_var() {
     server=$2; port=$3;
 }
 
-# Don't continue if root is ok
-[ -n "$rootok" ] && return
-
 # This script is sourced, so root should be set. But let's be paranoid
 [ -z "$root" ] && root=$(getarg root=)
 [ -z "$netroot" ] && netroot=$(getarg netroot=)
 
 # Root takes precedence over netroot
 if [ "${root%%:*}" = "nbd" ] ; then
+
+    # Don't continue if root is ok
+    [ -n "$rootok" ] && return
+
     if [ -n "$netroot" ] ; then
         warn "root takes precedence over netroot. Ignoring netroot"
 
     fi
     netroot=$root
+    unset root
 fi
 
 # If it's not nbd we don't continue
@@ -55,7 +57,8 @@ incol2 /proc/devices nbd || modprobe nbd || die "nbdroot requested but kernel/in
 rootok=1
 
 # Shut up init error check
-[ -z "$root" ] && root="nbd"
-
-echo '[ -e /dev/root ]' > $hookdir/initqueue/finished/nbd.sh
+if [ -z "$root" ]; then
+    root=block:/dev/root
+    wait_for_dev /dev/root
+fi
 

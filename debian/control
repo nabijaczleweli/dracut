@@ -2,8 +2,8 @@ Source: dracut
 Section: utils
 Priority: optional
 Maintainer: Thomas Lange <lange@debian.org>
-Build-Depends: debhelper, docbook-xsl, xsltproc
-Standards-Version: 3.9.2
+Build-Depends: debhelper, docbook-xsl, xsltproc, quilt
+Standards-Version: 3.9.3
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/dracut.git
 Vcs-Git: git://git.debian.org/collab-maint/dracut.git
 Homepage: http://www.kernel.org/pub/linux/utils/boot/dracut/dracut.html
@@ -12,7 +12,7 @@ Package: dracut
 Architecture: all
 Recommends: cryptsetup, dmsetup, dmraid, lvm2, mdadm
 Suggests: dracut-network
-Depends: cpio, module-init-tools, udev, kpartx, ${misc:Depends}
+Depends: cpio, module-init-tools, udev, kpartx, util-linux (>= 2.20), ${misc:Depends}
 Provides: linux-initramfs-tool
 Description: A new initramfs infrastructure
  Unlike existing initramfs's, this is an attempt at having as little as

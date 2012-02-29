@@ -17,7 +17,7 @@ if [ -n "$resume" ]; then
             ${resume#/dev/};
         printf "SYMLINK==\"%s\", ACTION==\"add|change\", SYMLINK+=\"/dev/resume\"\n" \
             ${resume#/dev/};
-    } >> $UDEVRULESD/99-resume-link.rules
+    } >> /etc/udev/rules.d/99-resume-link.rules
 
     {
         if [ -x /usr/sbin/resume ]; then
@@ -35,13 +35,10 @@ if [ -n "$resume" ]; then
     printf '[ -e "%s" ] && { ln -s "%s" /dev/resume; rm "$job"; }\n' \
         "$resume" "$resume" >> $hookdir/initqueue/settled/resume.sh
 
-    echo '[ -e /dev/resume ]' > $hookdir/initqueue/finished/resume.sh
+    printf 'warn "Cancelling resume operation. Device not found."; cancel_wait_for_dev /dev/resume; rm "$job" "%s/initqueue/settled/resume.sh";' \
+        "$hookdir" >> $hookdir/initqueue/timeout/resume.sh
 
-    {
-        printf '[ -e /dev/resume ] || '
-        printf 'warn "resume device "%s" not found"\n' "$resume"
-    } >> $hookdir/emergency/00-resume.sh
-
+    wait_for_dev "/dev/resume"
 
 elif ! getarg noresume; then
     {

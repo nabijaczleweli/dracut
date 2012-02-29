@@ -24,7 +24,7 @@ str_replace() {
 
     while strstr "${in}" "$s"; do
         chop="${in%%$s*}"
-        out="${out}${chop# }$r"
+        out="${out}${chop}$r"
         in="${in#*$s}"
     done
     echo "${out}${in}"
@@ -32,15 +32,22 @@ str_replace() {
 
 _getcmdline() {
     local _line
+    local _i
     unset _line
     if [ -z "$CMDLINE" ]; then
         if [ -e /etc/cmdline ]; then
-            while read _line; do
+            while read -r _line; do
                 CMDLINE_ETC="$CMDLINE_ETC $_line";
             done </etc/cmdline;
         fi
-        read CMDLINE </proc/cmdline;
-        CMDLINE="$CMDLINE $CMDLINE_ETC"
+        for _i in /etc/cmdline.d/*.conf; do
+            [ -e "$_i" ] || continue
+            while read -r _line; do
+                CMDLINE_ETC_D="$CMDLINE_ETC_D $_line";
+            done <"$_i";
+        done
+        read -r CMDLINE </proc/cmdline;
+        CMDLINE="$CMDLINE_ETC_D $CMDLINE_ETC $CMDLINE"
     fi
 }
 
@@ -117,6 +124,7 @@ getargbool() {
     if [ -n "$_b" ]; then
         [ $_b = "0" ] && return 1
         [ $_b = "no" ] && return 1
+        [ $_b = "off" ] && return 1
     fi
     return 0
 }
@@ -254,7 +262,10 @@ source_hook() {
 
 check_finished() {
     local f
-    for f in $hookdir/initqueue/finished/*.sh; do { [ -e "$f" ] && ( . "$f" ) ; } || return 1 ; done
+    for f in $hookdir/initqueue/finished/*.sh; do 
+        [ "$f" = "$hookdir/initqueue/finished/*.sh" ] && return 0
+        { [ -e "$f" ] && ( . "$f" ) ; } || return 1
+    done
     return 0
 }
 
@@ -372,9 +383,20 @@ ismounted() {
 
 wait_for_if_up() {
     local cnt=0
-    while [ $cnt -lt 20 ]; do
+    while [ $cnt -lt 200 ]; do
         li=$(ip link show $1)
         [ -z "${li##*state UP*}" ] && return 0
+        sleep 0.1
+        cnt=$(($cnt+1))
+    done
+    return 1
+}
+
+wait_for_route_ok() {
+    local cnt=0
+    while [ $cnt -lt 200 ]; do
+        li=$(ip route show)
+        [ -n "$li" ] && [ -z "${li##*$1*}" ] && return 0
         sleep 0.1
         cnt=$(($cnt+1))
     done
@@ -544,3 +566,190 @@ foreach_uuid_until() (
 
     return 1
 )
+
+# Get kernel name for given device.  Device may be the name too (then the same
+# is returned), a symlink (full path), UUID (prefixed with "UUID=") or label
+# (prefixed with "LABEL=").  If just a beginning of the UUID is specified or
+# even an empty, function prints all device names which UUIDs match - every in
+# single line.
+#
+# NOTICE: The name starts with "/dev/".
+#
+# Example:
+#   devnames UUID=123
+# May print:
+#   /dev/dm-1
+#   /dev/sdb1
+#   /dev/sdf3
+devnames() {
+    local dev="$1"; local d; local names
+
+    case "$dev" in
+    UUID=*)
+        dev="$(foreach_uuid_until '! blkid -U $___' "${dev#UUID=}")" \
+            && return 255
+        [ -z "$dev" ] && return 255
+        ;;
+    LABEL=*) dev="$(blkid -L "${dev#LABEL=}")" || return 255 ;;
+    /dev/?*) ;;
+    *) return 255 ;;
+    esac
+
+    for d in $dev; do
+        names="$names
+$(readlink -e -q "$d")" || return 255
+    done
+
+    echo "${names#
+}"
+}
+
+
+usable_root() {
+    local _d
+    [ -d $1 ] || return 1
+    for _d in proc sys dev; do
+        [ -e "$1"/$_d ] || return 1
+    done
+    return 0
+}
+
+inst_hook() {
+    local _hookname _unique _name _job _exe
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --hook)
+                _hookname="/$2";shift;;
+            --unique)
+                _unique="yes";;
+            --name)
+                _name="$2";shift;;
+            *)
+                break;;
+        esac
+        shift
+    done
+
+    if [ -z "$_unique" ]; then
+        _job="${_name}$$"
+    else
+        _job="${_name:-$1}"
+        _job=${_job##*/}
+    fi
+
+    _exe=$1
+    shift
+
+    [ -x "$_exe" ] || _exe=$(command -v $_exe)
+
+    if [ -n "$onetime" ]; then
+        {
+            echo '[ -e "$_job" ] && rm "$_job"'
+            echo "$_exe $@"
+        } > "/tmp/$$-${_job}.sh"
+    else
+        echo "$_exe $@" > "/tmp/$$-${_job}.sh"
+    fi
+
+    mv -f "/tmp/$$-${_job}.sh" "$hookdir/${_hookname}/${_job}.sh"
+}
+
+# inst_mount_hook <mountpoint> <prio> <name> <script>
+#
+# Install a mount hook with priority <prio>,
+# which executes <script> as soon as <mountpoint> is mounted.
+inst_mount_hook() {
+    local _prio="$2" _jobname="$3" _script="$4"
+    local _hookname="mount-$(str_replace "$1" '/' '\\x2f')"
+    [ -d "$hookdir/${_hookname}" ] || mkdir -p "$hookdir/${_hookname}"
+    inst_hook --hook "$_hookname" --unique --name "${_prio}-${_jobname}" "$_script"
+}
+
+# add_mount_point <dev> <mountpoint> <filesystem> <fsopts>
+#
+# Mount <dev> on <mountpoint> with <filesystem> and <fsopts>
+# and call any mount hooks, as soon, as it is mounted
+add_mount_point() {
+    local _dev="$1" _mp="$2" _fs="$3" _fsopts="$4"
+    local _hookname="mount-$(str_replace "$2" '/' '\\x2f')"
+    local _devname="dev-$(str_replace "$1" '/' '\\x2f')"
+    echo "$_dev $_mp $_fs $_fsopts 0 0" >> /etc/fstab
+
+    exec 7>/etc/udev/rules.d/99-mount-${_devname}.rules
+    echo 'SUBSYSTEM!="block", GOTO="mount_end"' >&7
+    echo 'ACTION!="add|change", GOTO="mount_end"' >&7
+    if [ -n "$_dev" ]; then
+        udevmatch "$_dev" >&7 || {
+            warn "add_mount_point dev=$_dev incorrect!"
+            continue
+        }
+        printf ', ' >&7
+    fi
+
+    {
+        printf -- 'RUN+="%s --unique --onetime ' $(command -v initqueue)
+        printf -- '--name mount-%%k '
+        printf -- '%s %s"\n' "$(command -v mount_hook)" "${_mp}"
+    } >&7
+    echo 'LABEL="mount_end"' >&7
+    exec 7>&-
+}
+
+# wait_for_mount <mountpoint>
+#
+# Installs a initqueue-finished script,
+# which will cause the main loop only to exit,
+# if <mountpoint> is mounted.
+wait_for_mount()
+{
+    local _name
+    _name="$(str_replace "$1" '/' '\\x2f')"
+    printf '. /lib/dracut-lib.sh\nismounted "%s"\n' $1 \
+        >> "$hookdir/initqueue/finished/ismounted-${_name}.sh"
+    {
+        printf 'ismounted "%s" || ' $1
+        printf 'warn "\"%s\" is not mounted"\n' $1
+    } >> "$hookdir/emergency/90-${_name}.sh"
+}
+
+# wait_for_dev <dev>
+#
+# Installs a initqueue-finished script,
+# which will cause the main loop only to exit,
+# if the device <dev> is recognized by the system.
+wait_for_dev()
+{
+    local _name
+    _name="$(str_replace "$1" '/' '\\x2f')"
+    printf '[ -e "%s" ]\n' $1 \
+        >> "$hookdir/initqueue/finished/devexists-${_name}.sh"
+    {
+        printf '[ -e "%s" ] || ' $1
+        printf 'warn "\"%s\" does not exist"\n' $1
+    } >> "$hookdir/emergency/80-${_name}.sh"
+}
+
+cancel_wait_for_dev()
+{
+    local _name
+    _name="$(str_replace "$1" '/' '\\x2f')"
+    rm -f "$hookdir/initqueue/finished/devexists-${_name}.sh"
+    rm -f "$hookdir/emergency/80-${_name}.sh"
+}
+
+killproc() {
+    local _exe="$(command -v $1)"
+    local _sig=$2
+    local _i
+    [ -x "$_exe" ] || return 1
+    for _i in /proc/[0-9]*; do
+        [ "$_i" = "/proc/1" ] && continue
+        if [ -e "$_i"/_exe ] && [  "$_i/_exe" -ef "$_exe" ] ; then
+            kill $_sig ${_i##*/}
+        fi
+    done
+}
+
+need_shutdown() {
+    >/run/initramfs/.need_shutdown
+}

@@ -28,9 +28,11 @@
 if [ "${root%%:*}" = "iscsi" ] ; then
     if [ -n "$netroot" ] ; then
         echo "Warning: root takes precedence over netroot. Ignoring netroot"
-
     fi
     netroot=$root
+    # if root is not specified try to mount the whole iSCSI LUN
+    printf 'ENV{DEVTYPE}!="partition", SYMLINK=="disk/by-path/*-iscsi-*-*", SYMLINK+="root"\n' >> /etc/udev/rules.d/99-iscsi-root.rules
+    root=/dev/root
 fi
 
 # If it's not empty or iscsi we don't continue
@@ -40,7 +42,7 @@ if [ -n "$iscsiroot" ] ; then
     [ -z "$netroot" ]  && netroot=$root
 
     # @deprecated
-    echo "Warning: Argument isciroot is deprecated and might be removed in a future"
+    echo "Warning: Argument iscsiroot is deprecated and might be removed in a future"
     echo "release. See 'man dracut.kernel' for more information."
 
     # Accept iscsiroot argument?
@@ -51,10 +53,17 @@ if [ -n "$iscsiroot" ] ; then
     [ -z "$netroot" ] || [ "$netroot" = "iscsi" ] && netroot=iscsi:$iscsiroot
 fi
 
+modprobe -q qla4xxx
+modprobe -q cxgb3i
+modprobe -q cxgb4i
+modprobe -q bnx2i
+modprobe -q be2iscsi
+
 # iscsi_firmware does not need argument checking
 if [ -n "$iscsi_firmware" ] ; then
     netroot=${netroot:-iscsi}
-    modprobe iscsi_ibft
+    modprobe -q iscsi_boot_sysfs 2>/dev/null
+    modprobe -q iscsi_ibft
 fi
 
 # If it's not iscsi we don't continue
@@ -68,13 +77,13 @@ if [ -z "$iscsi_firmware" ] ; then
 fi
 
 # ISCSI actually supported?
-[ -e /sys/devices/virtual/iscsi_transport ] || modprobe iscsi_tcp || die "iscsiroot requested but kernel/initrd does not support iscsi"
+if ! [ -e /sys/module/iscsi_tcp ]; then
+    modprobe -q iscsi_tcp || die "iscsiroot requested but kernel/initrd does not support iscsi"
+fi
 
 # Done, all good!
 rootok=1
 
 # Shut up init error check
 [ -z "$root" ] && root="iscsi"
-
-echo '[ -e /dev/root ]' > $hookdir/initqueue/finished/iscsi.sh
 

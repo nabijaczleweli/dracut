@@ -1,5 +1,6 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <!-- This document was created with Syntext Serna Free. --><!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN" "http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd" []>
+<!-- vim: set ts=8 sts=2 sw=2 et: -->
 <refentry id="dracut8">
   <refentryinfo>
     <title>dracut</title>
@@ -19,33 +20,31 @@
       </author>
       <author>
         <contrib>Developer</contrib>
-        <firstname>Warren</firstname>
-        <surname>Togami</surname>
-        <email>wtogami@redhat.com</email>
-      </author>
-      <author>
-        <contrib>Developer</contrib>
-        <firstname>Jeremy</firstname>
-        <surname>Katz</surname>
-        <email>katzj@redhat.com</email>
-      </author>
-      <author>
-        <contrib>Developer</contrib>
         <firstname>Philippe</firstname>
         <surname>Seewer</surname>
         <email>philippe.seewer@bfh.ch</email>
       </author>
       <author>
         <contrib>Developer</contrib>
-        <firstname>David</firstname>
-        <surname>Dillow</surname>
-        <email>dave@thedillows.org</email>
+        <firstname>Warren</firstname>
+        <surname>Togami</surname>
       </author>
       <author>
         <contrib>Developer</contrib>
         <firstname>Amadeusz</firstname>
         <surname>Żołnowski</surname>
         <email>aidecoe@aidecoe.name</email>
+      </author>
+      <author>
+        <contrib>Developer</contrib>
+        <firstname>Jeremy</firstname>
+        <surname>Katz</surname>
+      </author>
+      <author>
+        <contrib>Developer</contrib>
+        <firstname>David</firstname>
+        <surname>Dillow</surname>
+        <email>dave@thedillows.org</email>
       </author>
     </authorgroup>
   </refentryinfo>
@@ -82,7 +81,7 @@ which are needed to access the root filesystem.</para>
     <para>
 For a complete list of kernel command line options see
       <citerefentry>
-        <refentrytitle>dracut.kernel</refentrytitle>
+        <refentrytitle>dracut.cmdline</refentrytitle>
         <manvolnum>7</manvolnum>
       </citerefentry>
 </para>
@@ -111,7 +110,12 @@ For a complete list of kernel command line options see
             <para>specify a space-separated list of dracut modules to call
 when building the initramfs.
 Modules are located in
-<filename>/usr/share/dracut/modules.d</filename>. This parameter can be specified multiple times.</para>
+<filename>/usr/lib/dracut/modules.d</filename>. This parameter can be specified multiple times.</para>
+	    <para>
+	      If [LIST] has multiple arguments, then you have to put these in quotes.
+	      For example:
+	      <screen># dracut --modules "module1 module2"  ...</screen>
+	    </para>
           </listitem>
         </varlistentry>
         <varlistentry>
@@ -123,6 +127,11 @@ Modules are located in
           </term>
           <listitem>
             <para>omit a space-separated list of dracut modules. This parameter can be specified multiple times.</para>
+	    <para>
+	      If [LIST] has multiple arguments, then you have to put these in quotes.
+	      For example:
+	      <screen># dracut --omit "module1 module2"  ...</screen>
+	    </para>
           </listitem>
         </varlistentry>
         <varlistentry>
@@ -134,6 +143,11 @@ Modules are located in
           </term>
           <listitem>
             <para>add a space-separated list of dracut modules to the default set of modules. This parameter can be specified multiple times.</para>
+	    <para>
+	      If [LIST] has multiple arguments, then you have to put these in quotes.
+	      For example:
+	      <screen># dracut --add "module1 module2"  ...</screen>
+	    </para>
           </listitem>
         </varlistentry>
         <varlistentry>
@@ -142,6 +156,11 @@ Modules are located in
           </term>
           <listitem>
             <para>force to add a space-separated list of dracut modules to the default set of modules, when -H is specified. This parameter can be specified multiple times.</para>
+	    <para>
+	      If [LIST] has multiple arguments, then you have to put these in quotes.
+	      For example:
+	      <screen># dracut --force-add "module1 module2"  ...</screen>
+	    </para>
           </listitem>
         </varlistentry>
 
@@ -156,6 +175,11 @@ Modules are located in
             <para>specify a space-separated list of kernel modules to exclusively include
 in the initramfs.
 The kernel modules have to be specified without the &quot;.ko&quot; suffix. This parameter can be specified multiple times.</para>
+	    <para>
+	      If [LIST] has multiple arguments, then you have to put these in quotes.
+	      For example:
+	      <screen># dracut --drivers "kmodule1 kmodule2"  ...</screen>
+	    </para>
           </listitem>
         </varlistentry>
         <varlistentry>
@@ -165,6 +189,25 @@ The kernel modules have to be specified without the &quot;.ko&quot; suffix. This
           <listitem>
             <para>specify a space-separated list of kernel modules to add to the initramfs.
 The kernel modules have to be specified without the &quot;.ko&quot; suffix. This parameter can be specified multiple times.</para>
+	    <para>
+	      If [LIST] has multiple arguments, then you have to put these in quotes.
+	      For example:
+	      <screen># dracut --add-drivers "kmodule1 kmodule2"  ...</screen>
+	    </para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
+            <option>--omit-drivers&nbsp;<replaceable>&lt;list of kernel modules&gt;</replaceable></option>
+          </term>
+          <listitem>
+            <para>specify a space-separated list of kernel modules not to add to the initramfs.
+The kernel modules have to be specified without the &quot;.ko&quot; suffix. This parameter can be specified multiple times.</para>
+	    <para>
+	      If [LIST] has multiple arguments, then you have to put these in quotes.
+	      For example:
+	      <screen># dracut --omit-drivers "kmodule1 kmodule2"  ...</screen>
+	    </para>
           </listitem>
         </varlistentry>
         <varlistentry>
@@ -174,6 +217,11 @@ The kernel modules have to be specified without the &quot;.ko&quot; suffix. This
           <listitem>
             <para>specify a space-separated list of kernel filesystem modules to exclusively
 include in the generic initramfs. This parameter can be specified multiple times.</para>
+	    <para>
+	      If [LIST] has multiple arguments, then you have to put these in quotes.
+	      For example:
+	      <screen># dracut --filesystems "filesystem1 filesystem2"  ...</screen>
+	    </para>
           </listitem>
         </varlistentry>
         <varlistentry>
@@ -229,6 +277,46 @@ include in the generic initramfs. This parameter can be specified multiple times
         </varlistentry>
         <varlistentry>
           <term>
+            <option>--lvmconf</option>
+          </term>
+          <listitem>
+            <para>include local <filename>/etc/lvm/lvm.conf</filename></para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
+            <option>--nolvmconf</option>
+          </term>
+          <listitem>
+            <para>do not include local <filename>/etc/lvm/lvm.conf</filename></para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
+            <option>--fscks [LIST]</option>
+          </term>
+          <listitem>
+            <para>add a space-separated list of fsck tools, in addition to
+              <filename>dracut.conf</filename>'s specification; the
+              installation is opportunistic (non-existing tools are ignored)
+            </para>
+	    <para>
+	      If [LIST] has multiple arguments, then you have to put these in quotes.
+	      For example:
+	      <screen># dracut --fscks "fsck.foo barfsck"  ...</screen>
+	    </para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
+            <option>--nofscks</option>
+          </term>
+          <listitem>
+            <para>inhibit installation of any fsck tools</para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
             <option>--strip</option>
           </term>
           <listitem>
@@ -245,10 +333,10 @@ include in the generic initramfs. This parameter can be specified multiple times
         </varlistentry>
         <varlistentry>
           <term>
-            <option>--prefix</option>
+            <option>--prefix&nbsp;<replaceable>&lt;dir&gt;</replaceable></option>
           </term>
           <listitem>
-            <para>prefix initramfs files with /run/initramfs/</para>
+            <para>prefix initramfs files with the specified directory</para>
           </listitem>
         </varlistentry>
         <varlistentry>
@@ -256,7 +344,16 @@ include in the generic initramfs. This parameter can be specified multiple times
             <option>--noprefix</option>
           </term>
           <listitem>
-            <para>do not prefix initramfs files with /run/initramfs/ (default)</para>
+            <para>do not prefix initramfs files (default)</para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
+            <option>--ctty</option>
+          </term>
+          <listitem>
+            <para>if possible, try to spawn an emergency shell on a terminal
+              with job control</para>
           </listitem>
         </varlistentry>
         <varlistentry>
@@ -325,6 +422,14 @@ Default:
         </varlistentry>
         <varlistentry>
           <term>
+            <option>--sshkey&nbsp;<replaceable>&lt;sshkey file&gt;</replaceable></option>
+          </term>
+          <listitem>
+            <para>ssh key file used with ssh-client module.</para>
+          </listitem>
+        </varlistentry>
+        <varlistentry>
+          <term>
             <option>-l</option>
           </term>
           <term>
@@ -333,7 +438,7 @@ Default:
           <listitem>
             <para>activates the local mode. dracut will use modules from the current working
 directory instead of the system-wide installed modules in
-<filename>/usr/share/dracut/modules.d</filename>.
+<filename>/usr/lib/dracut/modules.d</filename>.
 This is useful when running dracut from a git checkout.</para>
           </listitem>
         </varlistentry>
@@ -360,7 +465,23 @@ the local host instead of a generic host.
             <para>Use <filename>/etc/fstab</filename> instead of <filename>/proc/self/mountinfo</filename>.</para>
           </listitem>
         </varlistentry>
-        <varlistentry>
+	<varlistentry>
+	  <term>
+	    <option>--add_fstab&nbsp;<replaceable>&lt;filename&gt;</replaceable>&nbsp;</option>
+	  </term>
+	  <listitem>
+	    <para>Add entries of <replaceable>&lt;filename&gt;</replaceable> to the initramfs /etc/fstab.</para>
+	  </listitem>
+	  </varlistentry>
+	<varlistentry>
+	  <term>
+	    <option>--mount&nbsp;&quot;<replaceable>&lt;device&gt;</replaceable> <replaceable>&lt;mountpoint&gt;</replaceable> <replaceable>&lt;filesystem type&gt;</replaceable> <replaceable>&lt;filesystem options&gt;</replaceable>&quot;</option>
+	  </term>
+	  <listitem>
+	    <para>Add entries of <replaceable>&lt;filename&gt;</replaceable> to the initramfs /etc/fstab.</para>
+	  </listitem>
+	  </varlistentry>
+	  <varlistentry>
           <term>
             <option>-i</option>
           </term>
@@ -381,6 +502,11 @@ TARGET directory in the final initramfs. If SOURCE is a file, it will be install
           </term>
           <listitem>
             <para>install the space separated list of files into the initramfs.</para>
+	    <para>
+	      If [LIST] has multiple arguments, then you have to put these in quotes.
+	      For example:
+	      <screen># dracut --install "/bin/foo /sbin/bar"  ...</screen>
+	    </para>
           </listitem>
         </varlistentry>
         <varlistentry>
@@ -546,7 +672,7 @@ set in the configuration files.</para>
     <title>See Also</title>
     <para>
       <citerefentry>
-        <refentrytitle>dracut.kernel</refentrytitle>
+        <refentrytitle>dracut.cmdline</refentrytitle>
         <manvolnum>7</manvolnum>
       </citerefentry>
       <citerefentry>

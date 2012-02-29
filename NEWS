@@ -1,3 +1,85 @@
+dracut-017
+==========
+- a _lot_ faster than dracut-016 in image creation
+- systemd service dracut-shutdown.service
+- livenet fixes
+- ssh-client module install fix
+- root=iscsi:... fixed
+- lots of restructuring and optimizing in dracut-functions.sh
+- usrmount: honor fs_passno in /etc/fstab
+- renamed all shell scripts to .sh
+- new option "--omit-drivers" and config option "omit_drivers"
+- hostonly mode fixups
+
+dracut-016
+==========
+- fixed lsinitrd
+- honor binaries in sbin first
+- fixed usrmount module
+- added systemd service for shutdown
+- fixed terminfo on distros with /usr/share/terminfo
+- reload udev rules after "pre-trigger" hook
+- improved test suite
+- new parameter "--omit-drivers" and new conf param omit_drivers
+- "--offroot" support for mdraid
+- new libs: net-lib.sh, nfs-lib.sh, url-lib.sh, img-lib.sh
+  full of functions to use in your dracut module
+
+dracut-015
+==========
+- hostonly mode automatically adds command line options for root and /usr
+- --add-fstab --mount parameters
+- ssh-client module
+- --ctty option: add job control
+- cleanup /run/initramfs
+- convertfs module
+- /sbin/ifup can be called directly
+- support kernel modules compressed with xz
+- s390 iscsi modules added
+- terminfo module
+- lsinitrd can handle concatened images
+- lsinitrd can sort by size
+
+dracut-014
+==========
+- new dracut arguments:
+  --lvmconf
+  --nolvmconf
+  --fscks [LIST]
+  --nofscks
+- new .conf options:
+  install_items
+  fscks
+  nofscks
+- new kernel options:
+  rd.md.ddf
+  rd.md.waitclean
+  plymouth.enable
+- dracut move from /sbin to /usr/bin
+- dracut modules dir moved from /usr/share/dracut to /usr/lib/dracut
+- profiling with "dracut --profile"
+- new TEST-16-DMSQUASH, test for Fedora LiveCDs
+- speedup of initramfs creation
+- ask_for_password fallback to CLI
+- mdraid completely switched to incremental assembly
+- no more cdrom polling
+- "switch_root" breakpoint is now very late
+- /dev/live is gone
+- /dev/root is gone
+- fs-lib dracut module for fscks added
+- xen dracut module removed
+- usb mass storage kernel drivers now included
+- usrmount dracut module added:
+  mount /usr if found in /sysroot/etc/fstab
+- only include fsck helper needed for hostonly
+- fcoe: support for bnx2fc
+- support iSCSI drivers: qla4xxx, cxgb3i, cxgb4i, bnx2i, be2iscsi
+- fips-aesni dracut module added
+- add install_items to dracut.conf
+    install_items+=" <file>[ <file> ...] "
+- speedup internal testsuite
+- internal testsuite: store temporary data in a temporary dir
+
 dracut-013
 ==========
 - speedup of initramfs creation
