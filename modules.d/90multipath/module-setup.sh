@@ -11,18 +11,16 @@ check() {
     [[ $debug ]] && set -x
 
     is_mpath() {
-        [ -e /sys/dev/block/$1/dm/uuid ] || return 1
-        [[ $(cat /sys/dev/block/$1/dm/uuid) =~ ^mpath- ]] && return 0
+        local _dev
+        _dev=$(get_maj_min $1)
+        [ -e /sys/dev/block/$_dev/dm/uuid ] || return 1
+        [[ $(cat /sys/dev/block/$_dev/dm/uuid) =~ ^mpath- ]] && return 0
         return 1
     }
 
-    if [[ $hostonly ]]; then
-        _rootdev=$(find_root_block_device)
-        if [[ $_rootdev ]]; then
-            check_block_and_slaves is_mpath "$_rootdev" && return 0
-        fi
-        return 1
-    fi
+    [[ $hostonly ]] || [[ $mount_needs ]] && {
+        for_each_host_dev_fs is_mpath || return 1
+    }
 
     return 0
 }
@@ -33,6 +31,7 @@ depends() {
 }
 
 installkernel() {
+    local _ret
     set +x
     mp_mod_filter() {
         local _mpfuncs='scsi_register_device_handler|dm_dirty_log_type_register|dm_register_path_selector|dm_register_target'
@@ -47,7 +46,9 @@ installkernel() {
 
     ( find_kernel_modules_by_path drivers/scsi; find_kernel_modules_by_path drivers/s390/scsi ;
       find_kernel_modules_by_path drivers/md )  |  mp_mod_filter  |  instmods
+    _ret=$?
     [[ $debug ]] && set -x
+    return $_ret
 }
 
 install() {

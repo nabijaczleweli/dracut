@@ -27,6 +27,7 @@ installkernel() {
     net_module_filter() {
         local _net_drivers='eth_type_trans|register_virtio_device'
         local _unwanted_drivers='/(wireless|isdn|uwb)/'
+        local _ret
         # subfunctions inherit following FDs
         local _merge=8 _side2=9
         function nmf1() {
@@ -55,7 +56,9 @@ installkernel() {
         # Use two parallel streams to filter alternating modules.
         set +x
         eval "( ( rotor ) ${_side2}>&1 | nmf1 ) ${_merge}>&1"
+        _ret=$?
         [[ $debug ]] && set -x
+        return $_ret
     }
 
     { find_kernel_modules_by_path drivers/net; find_kernel_modules_by_path drivers/s390/net; } \
@@ -68,12 +71,14 @@ installkernel() {
     instmods ipv6
     # bonding
     instmods bonding
+    # vlan
+    instmods 8021q
 }
 
 install() {
     local _arch _i _dir
     dracut_install ip arping tr dhclient
-    dracut_install -o brctl ifenslave
+    dracut_install -o brctl
     inst "$moddir/ifup.sh" "/sbin/ifup"
     inst "$moddir/netroot.sh" "/sbin/netroot"
     inst "$moddir/dhclient-script.sh" "/sbin/dhclient-script"
@@ -82,6 +87,7 @@ install() {
     inst_hook pre-udev 50 "$moddir/ifname-genrules.sh"
     inst_hook pre-udev 60 "$moddir/net-genrules.sh"
     inst_hook cmdline 91 "$moddir/dhcp-root.sh"
+    inst_hook cmdline 95 "$moddir/parse-vlan.sh"
     inst_hook cmdline 96 "$moddir/parse-bond.sh"
     inst_hook cmdline 97 "$moddir/parse-bridge.sh"
     inst_hook cmdline 98 "$moddir/parse-ip-opts.sh"

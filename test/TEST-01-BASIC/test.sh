@@ -48,7 +48,7 @@ test_setup() {
     (
 	initdir=$TESTDIR/overlay
 	. $basedir/dracut-functions.sh
-	dracut_install sfdisk mkfs.ext3 poweroff cp umount
+	dracut_install sfdisk mkfs.ext3 poweroff cp umount sync
 	inst_hook initqueue 01 ./create-root.sh
 	inst_simple ./99-idesymlinks.rules /etc/udev/rules.d/99-idesymlinks.rules
     )
@@ -61,7 +61,7 @@ test_setup() {
 	-d "piix ide-gd_mod ata_piix ext3 sd_mod" \
         --nomdadmconf \
 	-f $TESTDIR/initramfs.makeroot $KVERSION || return 1
-    rm -rf overlay
+    rm -rf $TESTDIR/overlay
     # Invoke KVM and/or QEMU to actually create the target filesystem.
 
     $testdir/run-qemu \

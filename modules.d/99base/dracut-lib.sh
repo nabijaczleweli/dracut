@@ -48,6 +48,7 @@ _getcmdline() {
     local _i
     unset _line
     if [ -z "$CMDLINE" ]; then
+        unset CMDLINE_ETC CMDLINE_ETC_D
         if [ -e /etc/cmdline ]; then
             while read -r _line; do
                 CMDLINE_ETC="$CMDLINE_ETC $_line";
@@ -306,6 +307,7 @@ die() {
     } >> $hookdir/emergency/01-die.sh
 
     > /run/initramfs/.die
+    emergency_shell
     exit 1
 }
 
@@ -315,6 +317,9 @@ check_quiet() {
         getargbool 0 rd.info -y rdinfo && DRACUT_QUIET="no"
         getargbool 0 rd.debug -y rdinitdebug && DRACUT_QUIET="no"
         getarg quiet || DRACUT_QUIET="yes"
+        a=$(getarg loglevel=)
+        [ -n "$a" ] && [ $a -ge 28 ] && DRACUT_QUIET="yes"
+        export DRACUT_QUIET
     fi
 }
 
@@ -379,7 +384,7 @@ incol2() {
 }
 
 udevsettle() {
-    [ -z "$UDEVVERSION" ] && UDEVVERSION=$(udevadm --version)
+    [ -z "$UDEVVERSION" ] && export UDEVVERSION=$(udevadm --version)
 
     if [ $UDEVVERSION -ge 143 ]; then
         udevadm settle --exit-if-exists=$hookdir/initqueue/work $settle_exit_if_exists
@@ -389,7 +394,7 @@ udevsettle() {
 }
 
 udevproperty() {
-    [ -z "$UDEVVERSION" ] && UDEVVERSION=$(udevadm --version)
+    [ -z "$UDEVVERSION" ] && export UDEVVERSION=$(udevadm --version)
 
     if [ $UDEVVERSION -ge 143 ]; then
         for i in "$@"; do udevadm control --property=$i; done
@@ -526,6 +531,17 @@ mkuniqdir() {
     done
 
     echo "${retdir}"
+}
+
+# Copy the contents of SRC into DEST, merging the contents of existing
+# directories (kinda like rsync, or cpio -p).
+# Creates DEST if it doesn't exist. Overwrites files with the same names.
+#
+# copytree SRC DEST
+copytree() {
+    local src="$1" dest="$2"
+    mkdir -p "$dest"; dest=$(readlink -e -q "$dest")
+    ( cd "$src"; cp -af . -t "$dest" )
 }
 
 # Evaluates command for UUIDs either given as arguments for this function or all
@@ -799,8 +815,6 @@ emergency_shell()
     warn $@
     source_hook "$hook"
     echo
-    wait_for_loginit
-    [ -e /run/initramfs/.die ] && exit 1
     if getargbool 1 rd.shell -y rdshell || getarg rd.break rdbreak; then
         echo "Dropping to debug shell."
         echo
@@ -824,6 +838,7 @@ emergency_shell()
         # cause a kernel panic
         exit 1
     fi
+    [ -e /run/initramfs/.die ] && exit 1
 }
 
 # Retain the values of these variables but ensure that they are unexported
