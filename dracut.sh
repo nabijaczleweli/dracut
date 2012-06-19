@@ -26,6 +26,8 @@
 # store for logging
 dracut_args="$@"
 
+set -o pipefail
+
 usage() {
     [[ $dracutbasedir ]] || dracutbasedir=/usr/lib/dracut
     if [[ -f $dracutbasedir/dracut-version.sh ]]; then
@@ -217,6 +219,8 @@ push_arg() {
 }
 
 verbosity_mod_l=0
+unset kernel
+unset outfile
 
 while (($# > 0)); do
     case ${1%%=*} in
@@ -289,6 +293,7 @@ while (($# > 0)); do
             elif ! [[ ${kernel+x} ]]; then
                 kernel=$1
             else
+                echo "Unknown argument: $1"
                 usage; exit 1;
             fi
             ;;
@@ -526,34 +531,12 @@ ddebug "Executing $0 $dracut_args"
     exit 0
 }
 
-# Detect lib paths
-if ! [[ $libdirs ]] ; then
-    if strstr "$(ldd /bin/sh)" "/lib64/" &>/dev/null \
-        && [[ -d /lib64 ]]; then
-        libdirs+=" /lib64"
-        [[ -d /usr/lib64 ]] && libdirs+=" /usr/lib64"
-    else
-        libdirs+=" /lib"
-        [[ -d /usr/lib ]] && libdirs+=" /usr/lib"
-    fi
-fi
-
 # This is kinda legacy -- eventually it should go away.
 case $dracutmodules in
     ""|auto) dracutmodules="all" ;;
 esac
 
 abs_outfile=$(readlink -f "$outfile") && outfile="$abs_outfile"
-
-srcmods="/lib/modules/$kernel/"
-[[ $drivers_dir ]] && {
-    if vercmp $(modprobe --version | cut -d' ' -f3) lt 3.7; then
-        dfatal 'To use --kmoddir option module-init-tools >= 3.7 is required.'
-        exit 1
-    fi
-    srcmods="$drivers_dir"
-}
-export srcmods
 
 [[ -f $srcmods/modules.dep ]] || {
     dfatal "$srcmods/modules.dep is missing. Did you run depmod?"
@@ -688,13 +671,14 @@ export initdir dracutbasedir dracutmodules drivers \
 [[ $prefix ]] && ln -sfn "${prefix#/}/lib" "$initdir/lib"
 
 if [[ $prefix ]]; then
-    for d in bin etc lib $libdirs sbin tmp usr var; do
+    for d in bin etc lib sbin tmp usr var $libdirs; do
+        strstr "$d" "/" && continue
         ln -sfn "${prefix#/}/${d#/}" "$initdir/$d"
     done
 fi
 
 if [[ $kernel_only != yes ]]; then
-    for d in usr/bin usr/sbin bin etc lib $libdirs sbin tmp usr var var/log var/run var/lock; do
+    for d in usr/bin usr/sbin bin etc lib sbin tmp usr var var/log var/run var/lock $libdirs; do
         [[ -e "${initdir}${prefix}/$d" ]] && continue
         if [ -L "/$d" ]; then
             inst_symlink "/$d" "${prefix}/$d"
@@ -730,7 +714,10 @@ if [[ $kernel_only != yes ]]; then
         mkdir -m 0755 -p ${initdir}/lib/dracut/hooks/$_d
     done
     if [[ "$UID" = "0" ]]; then
-        cp -a /dev/kmsg /dev/null /dev/console $initdir/dev
+        for i in /dev/kmsg /dev/null /dev/console; do
+            [ -e $i ] || continue
+            cp -a $i $initdir/dev
+        done
     fi
 fi
 
@@ -779,6 +766,7 @@ done
 unset moddir
 
 for i in $modules_loaded; do
+    mkdir -p $initdir/lib/dracut
     echo "$i" >> $initdir/lib/dracut/modules.txt
 done
 
