@@ -5,7 +5,7 @@ Index: dracut-020/dracut.sh
 @@ -887,8 +887,9 @@
      dinfo "*** hardlinking files done ***"
  }
- 
+
 +rm -f "$outfile"
  dinfo "*** Creating image file ***"
 -if ! ( cd "$initdir"; find . |cpio -R 0:0 -H newc -o --quiet| \
