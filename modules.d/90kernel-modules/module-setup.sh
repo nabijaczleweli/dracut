@@ -35,49 +35,49 @@ installkernel() {
             return 0
         }
 
-        hostonly='' instmods sr_mod sd_mod scsi_dh scsi_dh_rdac scsi_dh_emc ata_piix
-        hostonly='' instmods pcmcia firewire-ohci
-        hostonly='' instmods usb_storage sdhci sdhci-pci
+        hostonly='' instmods sr_mod sd_mod scsi_dh ata_piix \
+            ehci-hcd ehci-pci ehci-platform ohci-hcd uhci-hcd xhci-hcd hid_generic \
+            unix
 
-        # arm specific modules
-        hostonly='' instmods sdhci_esdhc_imx mmci sdhci_tegra mvsdio omap omapdrm sdhci_dove ahci_platform pata_imx sata_mv
+        instmods yenta_socket scsi_dh_rdac scsi_dh_emc \
+            atkbd i8042 usbhid hid-apple hid-sunplus hid-cherry hid-logitech \
+            hid-logitech-dj hid-microsoft firewire-ohci \
+            pcmcia usb_storage
 
-        # install keyboard support
-        hostonly='' instmods atkbd i8042 usbhid hid-apple hid-sunplus hid-cherry hid-logitech hid-logitech-dj hid-microsoft ehci-hcd ohci-hcd uhci-hcd xhci-hcd
-        # install unix socket support
-        hostonly='' instmods unix
-        instmods "=drivers/pcmcia" =ide "=drivers/usb/storage"
+        if [[ "$(uname -p)" == arm* ]]; then
+            # arm specific modules
+            hostonly='' instmods sdhci_esdhc_imx mmci sdhci_tegra mvsdio omap omapdrm \
+                omap_hsmmc sdhci_dove ahci_platform pata_imx sata_mv
+        fi
+
+        # install virtual machine support
+        instmods virtio virtio_blk virtio_ring virtio_pci virtio_scsi \
+            "=drivers/pcmcia" =ide "=drivers/usb/storage"
+
         find_kernel_modules  |  block_module_filter  |  instmods
+
         # if not on hostonly mode, install all known filesystems,
         # if the required list is not set via the filesystems variable
         if ! [[ $hostonly ]]; then
             if [[ -z $filesystems ]]; then
-                omit_drivers="$omit_drivers|kernel/fs/nfs|kernel/fs/nfsd|kernel/fs/lockd" omit_drivers="${omit_drivers##|}" instmods '=fs'
+                omit_drivers="${omit_drivers}|kernel/fs/nfs|kernel/fs/nfsd|kernel/fs/lockd" \
+                    omit_drivers="${omit_drivers##|}" \
+                    instmods '=fs'
             fi
         else
-            inst_fs() {
-                [[ $2 ]] || return 1
-                hostonly='' instmods $2
-            }
-            for_each_host_dev_fs inst_fs
+            for i in $(host_fs_all); do
+                hostonly='' instmods $i
+            done
         fi
-    else
-        hostonly='' instmods $drivers
     fi
-
-    if [[ $add_drivers ]]; then
-        hostonly='' instmods -c $add_drivers || return 1
-    fi
-    if [[ $filesystems ]]; then
-        hostonly='' instmods -c $filesystems || return 1
-    fi
-
+    :
 }
 
 install() {
-    local _f i
-    [ -f /etc/modprobe.conf ] && dracut_install /etc/modprobe.conf
-    dracut_install $(find -L /etc/modprobe.d/ -maxdepth 1 -type f -name '*.conf')
-    inst_hook cmdline 01 "$moddir/parse-kernel.sh"
+    dracut_install -o /lib/modprobe.d/*.conf
+    [[ $hostonly ]] && dracut_install -o /etc/modprobe.d/*.conf /etc/modprobe.conf
+    if ! dracut_module_included "systemd"; then
+        inst_hook cmdline 01 "$moddir/parse-kernel.sh"
+    fi
     inst_simple "$moddir/insmodpost.sh" /sbin/insmodpost.sh
 }

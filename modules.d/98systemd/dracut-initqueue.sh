@@ -2,16 +2,19 @@
 # -*- mode: shell-script; indent-tabs-mode: nil; sh-basic-offset: 4; -*-
 # ex: ts=8 sw=4 sts=4 et filetype=sh
 
+export DRACUT_SYSTEMD=1
 if [ -f /dracut-state.sh ]; then
-    . /dracut-state.sh || :
+    . /dracut-state.sh 2>/dev/null
 fi
-. /lib/dracut-lib.sh
+type getarg >/dev/null 2>&1 || . /lib/dracut-lib.sh
+
 source_conf /etc/conf.d
 
-getarg 'rd.break=initqueue' 'rdbreak=initqueue' && emergency_shell -n initqueue "Break before initqueue"
+make_trace_mem "hook initqueue" '1:shortmem' '2+:mem' '3+:slab'
+getarg 'rd.break=initqueue' -d 'rdbreak=initqueue' && emergency_shell -n initqueue "Break before initqueue"
 
-RDRETRY=$(getarg rd.retry 'rd_retry=')
-RDRETRY=${RDRETRY:-20}
+RDRETRY=$(getarg rd.retry -d 'rd_retry=')
+RDRETRY=${RDRETRY:-180}
 RDRETRY=$(($RDRETRY*2))
 export RDRETRY
 
@@ -22,7 +25,7 @@ while :; do
 
     check_finished && break
 
-    udevsettle
+    udevadm settle --exit-if-exists=$hookdir/initqueue/work
 
     check_finished && break
 
@@ -36,7 +39,7 @@ while :; do
         check_finished && break 2
     done
 
-    $UDEV_QUEUE_EMPTY >/dev/null 2>&1 || continue
+    udevadm settle --timeout=0 >/dev/null 2>&1 || continue
 
     for job in $hookdir/initqueue/settled/*.sh; do
         [ -e "$job" ] || break
@@ -44,17 +47,17 @@ while :; do
         check_finished && break 2
     done
 
-    $UDEV_QUEUE_EMPTY >/dev/null 2>&1 || continue
+    udevadm settle --timeout=0 >/dev/null 2>&1 || continue
 
     # no more udev jobs and queues empty.
     sleep 0.5
 
-
-    if [ $main_loop -gt $(($RDRETRY/2)) ]; then
+    if [ $main_loop -gt $((2*$RDRETRY/3)) ]; then
         for job in $hookdir/initqueue/timeout/*.sh; do
             [ -e "$job" ] || break
             job=$job . $job
-            main_loop=0
+            udevadm settle --timeout=0 >/dev/null 2>&1 || main_loop=0
+            [ -f $hookdir/initqueue/work ] && main_loop=0
         done
     fi
 
@@ -67,42 +70,8 @@ unset queuetriggered
 unset main_loop
 unset RDRETRY
 
-
-# pre-mount happens before we try to mount the root filesystem,
-# and happens once.
-getarg 'rd.break=pre-mount' 'rdbreak=pre-mount' && emergency_shell -n pre-mount "Break pre-mount"
-source_hook pre-mount
-
-
-getarg 'rd.break=mount' 'rdbreak=mount' && emergency_shell -n mount "Break mount"
-# mount scripts actually try to mount the root filesystem, and may
-# be sourced any number of times. As soon as one suceeds, no more are sourced.
-i=0
-while :; do
-    if ismounted "$NEWROOT"; then
-        usable_root "$NEWROOT" && break;
-        umount "$NEWROOT"
-    fi
-    for f in $hookdir/mount/*.sh; do
-        [ -f "$f" ] && . "$f"
-        if ismounted "$NEWROOT"; then
-            usable_root "$NEWROOT" && break;
-            warn "$NEWROOT has no proper rootfs layout, ignoring and removing offending mount hook"
-            umount "$NEWROOT"
-            rm -f "$f"
-        fi
-    done
-
-    i=$(($i+1))
-    [ $i -gt 20 ] && emergency_shell "Can't mount root filesystem"
-done
-
-{
-    echo -n "Mounted root filesystem "
-    while read dev mp rest; do [ "$mp" = "$NEWROOT" ] && echo $dev; done < /proc/mounts
-} | vinfo
-
-
 export -p > /dracut-state.sh
 
-systemctl isolate initrd-switch-root.target
+service="${0##*/}"
+cp "/etc/systemd/system/${service%.sh}.service" /run/systemd/system/
+exit 0

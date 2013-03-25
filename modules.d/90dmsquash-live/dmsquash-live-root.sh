@@ -6,7 +6,7 @@ type getarg >/dev/null 2>&1 || . /lib/dracut-lib.sh
 
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-if getargbool 0 rd.live.debug -y rdlivedebug; then
+if getargbool 0 rd.live.debug -n -y rdlivedebug; then
     exec > /tmp/liveroot.$$.out
     exec 2>> /tmp/liveroot.$$.out
     set -x
@@ -17,22 +17,27 @@ livedev="$1"
 
 # parse various live image specific options that make sense to be
 # specified as their own things
-live_dir=$(getarg rd.live.dir live_dir)
+live_dir=$(getarg rd.live.dir -d live_dir)
 [ -z "$live_dir" ] && live_dir="LiveOS"
-getargbool 0 rd.live.ram -y live_ram && live_ram="yes"
-getargbool 0 rd.live.overlay.reset -y reset_overlay && reset_overlay="yes"
-getargbool 0 rd.live.overlay.readonly -y readonly_overlay && readonly_overlay="--readonly" || readonly_overlay=""
-overlay=$(getarg rd.live.overlay overlay)
+getargbool 0 rd.live.ram -d -y live_ram && live_ram="yes"
+getargbool 0 rd.live.overlay.reset -d -y reset_overlay && reset_overlay="yes"
+getargbool 0 rd.live.overlay.readonly -d -y readonly_overlay && readonly_overlay="--readonly" || readonly_overlay=""
+overlay=$(getarg rd.live.overlay -d overlay)
 
 # CD/DVD media check
 [ -b $livedev ] && fs=$(blkid -s TYPE -o value $livedev)
 if [ "$fs" = "iso9660" -o "$fs" = "udf" ]; then
     check="yes"
 fi
-getarg rd.live.check check || check=""
+getarg rd.live.check -d check || check=""
 if [ -n "$check" ]; then
     [ -x /bin/plymouth ] && /bin/plymouth --hide-splash
-    checkisomd5 --verbose $livedev
+    if [ -n "$DRACUT_SYSTEMD" ]; then
+        p=$(str_replace "$livedev" "-" '\x2d')
+        systemctl start checkisomd5@${p}.service
+    else
+        checkisomd5 --verbose $livedev
+    fi
     if [ $? -ne 0 ]; then
         die "CD check failed!"
         exit 1
@@ -44,8 +49,11 @@ ln -s $livedev /run/initramfs/livedev
 
 # determine filesystem type for a filesystem image
 det_img_fs() {
+    udevadm settle
     blkid -s TYPE -u noraid -o value "$1"
 }
+
+modprobe squashfs
 
 for arg in $CMDLINE; do case $arg in ro|rw) liverw=$arg ;; esac; done
 # mount the backing of the live image first
@@ -98,25 +106,41 @@ do_live_overlay() {
         if [ -f /run/initramfs/overlayfs$pathspec -a -w /run/initramfs/overlayfs$pathspec ]; then
             losetup $OVERLAY_LOOPDEV /run/initramfs/overlayfs$pathspec
             if [ -n "$reset_overlay" ]; then
-                dd if=/dev/zero of=$OVERLAY_LOOPDEV bs=64k count=1 2>/dev/null
+                dd if=/dev/zero of=$OVERLAY_LOOPDEV bs=64k count=1 conv=fsync 2>/dev/null
             fi
             setup="yes"
         fi
         umount -l /run/initramfs/overlayfs || :
     fi
 
-    if [ -z "$setup" ]; then
-        if [ -n "$devspec" -a -n "$pathspec" ]; then
+    if [ -z "$setup" -o -n "$readonly_overlay" ]; then
+        if [ -n "$setup" ]; then
+            warn "Using temporary overlay."
+        elif [ -n "$devspec" -a -n "$pathspec" ]; then
             warn "Unable to find persistent overlay; using temporary"
             sleep 5
         fi
 
         dd if=/dev/null of=/overlay bs=1024 count=1 seek=$((512*1024)) 2> /dev/null
-        losetup $OVERLAY_LOOPDEV /overlay
+        if [ -n "$setup" -a -n "$readonly_overlay" ]; then
+            RO_OVERLAY_LOOPDEV=$( losetup -f )
+            losetup $RO_OVERLAY_LOOPDEV /overlay
+        else
+            losetup $OVERLAY_LOOPDEV /overlay
+        fi
     fi
 
     # set up the snapshot
-    echo 0 `blockdev --getsz $BASE_LOOPDEV` snapshot $BASE_LOOPDEV $OVERLAY_LOOPDEV p 8 | dmsetup create $readonly_overlay live-rw
+    sz=$(blockdev --getsz $BASE_LOOPDEV)
+    if [ -n "$readonly_overlay" ]; then
+        echo 0 $sz snapshot $BASE_LOOPDEV $OVERLAY_LOOPDEV p 8 | dmsetup create $readonly_overlay live-ro
+        base="/dev/mapper/live-ro"
+        over=$RO_OVERLAY_LOOPDEV
+    else
+        base=$BASE_LOOPDEV
+        over=$OVERLAY_LOOPDEV
+    fi
+    echo 0 $sz snapshot $base $over p 8 | dmsetup create live-rw
 }
 
 # live cd helper function
@@ -167,7 +191,6 @@ if [ -e "$SQUASHED" ] ; then
         dd if=$SQUASHED of=/squashed.img bs=512 2> /dev/null
         umount -n /run/initramfs/live
         echo "Done copying live image to RAM."
-        eject -p $livedev || :
         SQUASHED="/squashed.img"
     fi
 

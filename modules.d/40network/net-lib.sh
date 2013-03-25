@@ -1,4 +1,6 @@
 #!/bin/sh
+# -*- mode: shell-script; indent-tabs-mode: nil; sh-basic-offset: 4; -*-
+# ex: ts=8 sw=4 sts=4 et filetype=sh
 
 get_ip() {
     local iface="$1" ip=""
@@ -145,8 +147,8 @@ ibft_to_cmdline() {
         for iface in /sys/firmware/ibft/ethernet*; do
             [ -e ${iface}/mac ] || continue
             mac=$(read a < ${iface}/mac; echo $a)
-            [ -z "$ifname_mac" ] && continue
-            dev=$(set_ifname ibft $ifname_mac)
+            [ -z "$mac" ] && continue
+            dev=$(set_ifname ibft $mac)
             dhcp=$(read a < ${iface}/dhcp; echo $a)
             if [ -n "$dhcp" ]; then
                 echo "ip=$dev:dhcp"
@@ -157,6 +159,7 @@ ibft_to_cmdline() {
                 hostname=$(read a < ${iface}/hostname; echo $a)
                 echo "ip=$ip::$gw:$mask:$hostname:$dev:none"
             fi
+            echo $mac > /tmp/net.${dev}.has_ibft_config
         done
     ) >> /etc/cmdline.d/40-ibft.conf
     # reread cmdline
@@ -269,10 +272,15 @@ ip_to_var() {
     case $# in
         0)  autoconf="error" ;;
         1)  autoconf=$1 ;;
-        2)  dev=$1; autoconf=$2 ;;
-        3)  dev=$1; autoconf=$2; mtu=$3 ;;
-        4)  dev=$1; autoconf=$2; mtu=$3; macaddr=$4 ;;
-        *)  ip=$1; srv=$2; gw=$3; mask=$4; hostname=$5; dev=$6; autoconf=$7; mtu=$8; macaddr=$9 ;;
+        2)  [ -n "$1" ] && dev=$1; [ -n "$2" ] && autoconf=$2 ;;
+        3)  [ -n "$1" ] && dev=$1; [ -n "$2" ] && autoconf=$2; [ -n "$3" ] && mtu=$3 ;;
+        4)  [ -n "$1" ] && dev=$1; [ -n "$2" ] && autoconf=$2; [ -n "$3" ] && mtu=$3; [ -n "$4" ] && macaddr=$4 ;;
+        *)  [ -n "$1" ] && ip=$1; [ -n "$2" ] && srv=$2; [ -n "$3" ] && gw=$3; [ -n "$4" ] && mask=$4;
+            [ -n "$5" ] && hostname=$5; [ -n "$6" ] && dev=$6; [ -n "$7" ] && autoconf=$7; [ -n "$8" ] && mtu=$8;
+            if [ -n "${9}" -a -n "${10}" -a -n "${11}" -a -n "${12}" -a -n "${13}" -a -n "${14}" ]; then
+                macaddr="${9}:${10}:${11}:${12}:${13}:${14}"
+            fi
+	    ;;
     esac
     # anaconda-style argument cluster
     if strstr "$autoconf" "*.*.*.*"; then
@@ -289,3 +297,72 @@ ip_to_var() {
         esac
     fi
 }
+
+parse_ifname_opts() {
+    local IFS=:
+    set $1
+
+    case $# in
+        7)
+            ifname_if=$1
+            # udev requires MAC addresses to be lower case
+            ifname_mac=$(echo $2:$3:$4:$5:$6:$7 | sed 'y/ABCDEF/abcdef/')
+            ;;
+        *)
+            die "Invalid arguments for ifname="
+            ;;
+    esac
+
+    case $ifname_if in
+        eth[0-9]|eth[0-9][0-9]|eth[0-9][0-9][0-9]|eth[0-9][0-9][0-9][0-9])
+            warn "ifname=$ifname_if uses the kernel name space for interfaces"
+            warn "This can fail for multiple network interfaces and is discouraged!"
+            warn "Please use a custom name like \"netboot\" or \"bluesocket\""
+            warn "or use biosdevname and no ifname= at all."
+            ;;
+    esac
+
+}
+
+# some network driver need long time to initialize, wait before it's ready.
+wait_for_if_link() {
+    local cnt=0
+    local li
+    while [ $cnt -lt 600 ]; do
+        li=$(ip -o link show dev $1 2>/dev/null)
+        [ -n "$li" ] && return 0
+        sleep 0.1
+        cnt=$(($cnt+1))
+    done
+    return 1
+}
+
+wait_for_if_up() {
+    local cnt=0
+    local li
+    while [ $cnt -lt 200 ]; do
+        li=$(ip -o link show up dev $1)
+        [ -n "$li" ] && return 0
+        sleep 0.1
+        cnt=$(($cnt+1))
+    done
+    return 1
+}
+
+wait_for_route_ok() {
+    local cnt=0
+    while [ $cnt -lt 200 ]; do
+        li=$(ip route show)
+        [ -n "$li" ] && [ -z "${li##*$1*}" ] && return 0
+        sleep 0.1
+        cnt=$(($cnt+1))
+    done
+    return 1
+}
+
+linkup() {
+    wait_for_if_link $1 2>/dev/null\
+     && ip link set $1 up 2>/dev/null\
+     && wait_for_if_up $1 2>/dev/null
+}
+

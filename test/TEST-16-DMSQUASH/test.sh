@@ -11,7 +11,7 @@ test_check() {
         echo "python-imgcreate not installed"
 	return 1
     fi
-    return 1
+    return 0
 }
 
 test_run() {
@@ -19,7 +19,7 @@ test_run() {
 	-boot order=d \
 	-cdrom $TESTDIR/livecd.iso \
 	-hda $TESTDIR/root.img \
-	-m 256M -nographic \
+	-m 256M -smp 2 -nographic \
 	-net none -kernel /boot/vmlinuz-$KVERSION \
 	-append "root=live:CDLABEL=LiveCD live rw quiet rd.retry=3 rd.info console=ttyS0,115200n81 selinux=0 rd.debug $DEBUGFAIL" \
 	-initrd $TESTDIR/initramfs.testing
@@ -29,7 +29,7 @@ test_run() {
 test_setup() {
     mkdir -p $TESTDIR/overlay
     (
-	initdir=$TESTDIR/overlay
+	export initdir=$TESTDIR/overlay
 	. $basedir/dracut-functions.sh
 	dracut_install poweroff shutdown
 	inst_hook emergency 000 ./hard-off.sh
@@ -47,7 +47,7 @@ test_setup() {
     kernel=$KVERSION
     # Create what will eventually be our root filesystem onto an overlay
     (
-	initdir=$TESTDIR/root-source
+	export initdir=$TESTDIR/root-source
 	. $basedir/dracut-functions.sh
 	dracut_install sh df free ls shutdown poweroff stty cat ps ln ip route \
 	    mount dmesg ifconfig dhclient mkdir cp ping dhclient \

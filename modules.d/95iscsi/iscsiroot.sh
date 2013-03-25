@@ -10,6 +10,7 @@
 
 type getarg >/dev/null 2>&1 || . /lib/dracut-lib.sh
 type parse_iscsi_root >/dev/null 2>&1 || . /lib/net-lib.sh
+type write_fs_tab >/dev/null 2>&1 || . /lib/fs-lib.sh
 
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -27,8 +28,6 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 netif="$1"
 iroot="$2"
 
-source_all /etc/conf.d
-
 # If it's not iscsi we don't continue
 [ "${iroot%%:*}" = "iscsi" ] || exit 1
 
@@ -40,18 +39,22 @@ modprobe crc32c 2>/dev/null
 
 [ -e /sys/module/bnx2i ] && iscsiuio
 
-if getargbool 0 rd.iscsi.firmware -y iscsi_firmware ; then
+if getargbool 0 rd.iscsi.firmware -d -y iscsi_firmware ; then
     if [ -z "$root" -o -n "${root%%block:*}" ]; then
         # if root is not specified try to mount the whole iSCSI LUN
         printf 'ENV{DEVTYPE}!="partition", SYMLINK=="disk/by-path/*-iscsi-*-*", SYMLINK+="root"\n' >> /etc/udev/rules.d/99-iscsi-root.rules
         udevadm control --reload
+        write_fs_tab /dev/root
+        wait_for_dev /dev/root
     fi
 
-    for p in $(getargs rd.iscsi.param iscsi_param); do
+    for p in $(getargs rd.iscsi.param -d iscsi_param); do
 	iscsi_param="$iscsi_param --param $p"
     done
 
     iscsistart -b $iscsi_param
+    echo 'started' > "/tmp/iscsistarted-iscsi"
+    echo 'started' > "/tmp/iscsistarted-firmware"
     exit 0
 fi
 
@@ -66,25 +69,25 @@ handle_netroot()
     local p
 
     # override conf settings by command line options
-    arg=$(getargs rd.iscsi.initiator iscsi_initiator=)
+    arg=$(getargs rd.iscsi.initiator -d iscsi_initiator=)
     [ -n "$arg" ] && iscsi_initiator=$arg
-    arg=$(getargs rd.iscsi.target.name iscsi_target_name=)
+    arg=$(getargs rd.iscsi.target.name -d iscsi_target_name=)
     [ -n "$arg" ] && iscsi_target_name=$arg
-    arg=$(getargs rd.iscsi.target.ip iscsi_target_ip)
+    arg=$(getargs rd.iscsi.target.ip -d iscsi_target_ip)
     [ -n "$arg" ] && iscsi_target_ip=$arg
-    arg=$(getargs rd.iscsi.target.port iscsi_target_port=)
+    arg=$(getargs rd.iscsi.target.port -d iscsi_target_port=)
     [ -n "$arg" ] && iscsi_target_port=$arg
-    arg=$(getargs rd.iscsi.target.group iscsi_target_group=)
+    arg=$(getargs rd.iscsi.target.group -d iscsi_target_group=)
     [ -n "$arg" ] && iscsi_target_group=$arg
-    arg=$(getargs rd.iscsi.username iscsi_username=)
+    arg=$(getargs rd.iscsi.username -d iscsi_username=)
     [ -n "$arg" ] && iscsi_username=$arg
-    arg=$(getargs rd.iscsi.password iscsi_password)
+    arg=$(getargs rd.iscsi.password -d iscsi_password)
     [ -n "$arg" ] && iscsi_password=$arg
-    arg=$(getargs rd.iscsi.in.username iscsi_in_username=)
+    arg=$(getargs rd.iscsi.in.username -d iscsi_in_username=)
     [ -n "$arg" ] && iscsi_in_username=$arg
-    arg=$(getargs rd.iscsi.in.password iscsi_in_password=)
+    arg=$(getargs rd.iscsi.in.password -d iscsi_in_password=)
     [ -n "$arg" ] && iscsi_in_password=$arg
-    for p in $(getargs rd.iscsi.param iscsi_param); do
+    for p in $(getargs rd.iscsi.param -d iscsi_param); do
 	iscsi_param="$iscsi_param --param $p"
     done
 
@@ -130,20 +133,21 @@ handle_netroot()
     fi
 
     echo "InitiatorName='$iscsi_initiator'" > /run/initiatorname.iscsi
-    ln -s /run/initiatorname.iscsi /dev/.initiatorname.iscsi
+    ln -fs /run/initiatorname.iscsi /dev/.initiatorname.iscsi
 
 # FIXME $iscsi_protocol??
 
     if [ -z "$root" -o -n "${root%%block:*}" ]; then
         # if root is not specified try to mount the whole iSCSI LUN
         printf 'SYMLINK=="disk/by-path/*-iscsi-*-%s", SYMLINK+="root"\n' $iscsi_lun >> /etc/udev/rules.d/99-iscsi-root.rules
+        udevadm control --reload
+        write_fs_tab /dev/root
+        wait_for_dev /dev/root
 
         # install mount script
-        echo "iscsi_lun=$iscsi_lun . /bin/mount-lun.sh " > $hookdir/mount/01-$$-iscsi.sh
+        [ -z "$DRACUT_SYSTEMD" ] && \
+            echo "iscsi_lun=$iscsi_lun . /bin/mount-lun.sh " > $hookdir/mount/01-$$-iscsi.sh
     fi
-
-    # inject new exit_if_exists
-    echo 'settle_exit_if_exists="--exit-if-exists=/dev/root"; rm "$job"' > $hookdir/initqueue/iscsi-settle.sh
 
     # force udevsettle to break
     > $hookdir/initqueue/work
@@ -159,6 +163,10 @@ handle_netroot()
 	${iscsi_netdev_name+--param iface.net_ifacename=$iscsi_netdev_name} \
         ${iscsi_param} \
 	|| :
+
+    netroot_enc=$(str_replace "$1" '/' '\2f')
+    echo 'started' > "/tmp/iscsistarted-iscsi:${netroot_enc}"
+
 }
 
 # loop over all netroot parameter
