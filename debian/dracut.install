@@ -9,6 +9,7 @@ usr/lib/dracut/dracut-logger.sh
 usr/share/bash-completion/completions/dracut   etc/bash_completion.d
 usr/share/bash-completion/completions/lsinitrd etc/bash_completion.d
 debian/kernel                   etc
+debian/etc/10-debian.conf	etc/dracut.conf.d
 etc/dracut.conf                 etc
 modules.d/00dash		usr/lib/dracut/modules.d
 modules.d/00bash		usr/lib/dracut/modules.d
@@ -26,7 +27,6 @@ modules.d/30convertfs		usr/lib/dracut/modules.d
 modules.d/50drm			usr/lib/dracut/modules.d
 modules.d/50gensplash		usr/lib/dracut/modules.d
 modules.d/50plymouth		usr/lib/dracut/modules.d
-modules.d/90bcache		usr/lib/dracut/modules.d
 modules.d/90btrfs		usr/lib/dracut/modules.d
 modules.d/90crypt		usr/lib/dracut/modules.d
 modules.d/90dmraid		usr/lib/dracut/modules.d

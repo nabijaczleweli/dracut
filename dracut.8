@@ -2,12 +2,12 @@
 .\"     Title: dracut
 .\"    Author: [see the "AUTHORS" section]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 09/12/2013
+.\"      Date: 10/07/2013
 .\"    Manual: dracut
 .\"    Source: dracut
 .\"  Language: English
 .\"
-.TH "DRACUT" "8" "09/12/2013" "dracut" "dracut"
+.TH "DRACUT" "8" "10/07/2013" "dracut" "dracut"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -479,6 +479,16 @@ strip binaries in the initramfs (default)
 \fB\-\-nostrip\fR
 .RS 4
 do not strip binaries in the initramfs
+.RE
+.PP
+\fB\-\-prelink\fR
+.RS 4
+prelink binaries in the initramfs (default)
+.RE
+.PP
+\fB\-\-noprelink\fR
+.RS 4
+do not prelink binaries in the initramfs
 .RE
 .PP
 \fB\-\-hardlink\fR
