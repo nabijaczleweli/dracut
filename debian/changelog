@@ -1,3 +1,16 @@
+dracut (036-1) unstable; urgency=low
+
+  * new upstream, Closes: #720105
+  * control: use kmod in depends, Closes: #733699
+  * control: add conflicts, closes: #729809
+  * control: change package description one liner
+  * aufs: mount /cow with mode 0775, Closes: #737554
+  * add NEWS.Debian
+  * adjust patches
+  * improve watch file
+
+ -- Thomas Lange <lange@debian.org>  Mon, 17 Feb 2014 15:53:00 +0100
+
 dracut (034-2) unstable; urgency=low
 
   * postinst, preinst: respect second argument, Closes: #729621

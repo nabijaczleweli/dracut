@@ -13,10 +13,10 @@ Architecture: any
 Multi-Arch: foreign
 Recommends: cryptsetup, dmsetup, dmraid, lvm2, mdadm
 Suggests: dracut-network
-Depends: cpio, module-init-tools, udev, kpartx, kbd, util-linux (>= 2.20), ${shlibs:Depends}, ${misc:Depends}
+Depends: cpio, kmod, udev, kpartx, kbd, util-linux (>= 2.20), ${shlibs:Depends}, ${misc:Depends}
 Provides: linux-initramfs-tool
-Conflicts: initramfs-tools
-Description: A new initramfs infrastructure
+Conflicts: initramfs-tools, live-tools
+Description: Low-level tool for generating an initramfs image
  Unlike existing initramfs's, this is an attempt at having as little as
  possible hard-coded into the initramfs as possible.  The initramfs has
  (basically) one purpose in life -- getting the rootfs mounted so that
@@ -31,7 +31,7 @@ Package: dracut-network
 Architecture: all
 Recommends: nfs-common, open-iscsi, nbd-client, curl
 Depends: dracut, iputils-arping, isc-dhcp-client, ${misc:Depends}
-Description: A new initramfs infrastucture
+Description: Low-level tool for generating an initramfs image
  Unlike existing initramfs's, this is an attempt at having as little as
  possible hard-coded into the initramfs as possible.  The initramfs has
  (basically) one purpose in life -- getting the rootfs mounted so that
