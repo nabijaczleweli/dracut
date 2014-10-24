@@ -1,6 +1,5 @@
 #!/bin/bash
-# -*- mode: shell-script; indent-tabs-mode: nil; sh-basic-offset: 4; -*-
-# ex: ts=8 sw=4 sts=4 et filetype=sh
+
 TEST_DESCRIPTION="rpm integrity after dracut and kernel install"
 $TESTDIR
 
@@ -51,6 +50,8 @@ find / -xdev -type f -not -path '/var/*' \
   -not -path '/etc/nsswitch.conf.bak' \
   -not -path '/etc/iscsi/initiatorname.iscsi' \
   -not -path '/boot/*0-rescue*' \
+  -not -patch '/usr/share/mime/*' \
+  -not -patch '/etc/crypto-policies/*' \
   -not -path '/dev/null' \
   -not -path "/boot/loader/entries/\$(cat /etc/machine-id)-*" \
   -not -path "/boot/\$(cat /etc/machine-id)/*" \
