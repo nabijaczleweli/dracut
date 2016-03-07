@@ -1,3 +1,15 @@
+dracut (044+3-3~bpo8+1) jessie-backports; urgency=medium
+
+  * Rebuild for jessie-backports.
+
+ -- Afif Elghraoui <afif@debian.org>  Sun, 06 Mar 2016 19:52:04 -0800
+
+dracut (044+3-3) unstable; urgency=low
+
+  * add dracut.maintscript, so the duplicate logrotate entry is removed
+
+ -- Thomas Lange <lange@debian.org>  Fri, 15 Jan 2016 02:37:08 +0100
+
 dracut (044+3-2) unstable; urgency=medium
 
   [ Ben Hutchings ]
