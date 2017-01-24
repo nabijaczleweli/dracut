@@ -1,9 +1,24 @@
-dracut (044+223-1) unstable; urgency=low
+dracut (044+241-1~bpo8+1) jessie-backports; urgency=low
+
+  * rebuild for jessie-backports
+  * merge upstream changes
+  * 09console-setup/module-setup.sh: fix cp, Closes: #828915
+  * control: add recommends, Closes: #852083
+
+ -- Thomas Lange <lange@debian.org>  Tue, 24 Jan 2017 15:51:01 +0100
+
+dracut (044+223-1~bpo8+1) jessie-backports; urgency=medium
 
   * new upstream
-  * control: only depend on asciidoc-base
+  * make release for backports
 
- -- Thomas Lange <lange@debian.org>  Tue, 17 Jan 2017 16:20:51 +0100
+ -- Thomas Lange <lange@debian.org>  Tue, 17 Jan 2017 15:54:17 +0100
+
+dracut (044+189-2~bpo8+1) jessie-backports; urgency=high
+
+  * make release for backports
+
+ -- Thomas Lange <lange@debian.org>  Wed, 14 Dec 2016 15:52:32 +0100
 
 dracut (044+189-2) unstable; urgency=high
 
@@ -19,6 +34,12 @@ dracut (044+189-1) unstable; urgency=high
   * new patch crc32, adding crc32c driver for ext4, Closes: #835060
 
  -- Thomas Lange <lange@debian.org>  Tue, 13 Dec 2016 21:45:01 +0100
+
+dracut (044+109-1~bpo8+1) jessie-backports; urgency=low
+
+  * make release for backports
+
+ -- Thomas Lange <lange@debian.org>  Thu, 25 Aug 2016 22:18:55 +0200
 
 dracut (044+109-1) unstable; urgency=low
 
