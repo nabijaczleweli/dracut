@@ -5,9 +5,8 @@ TEST_DESCRIPTION="root filesystem on NBD"
 KVERSION=${KVERSION-$(uname -r)}
 
 # Uncomment this to debug failures
-#DEBUGFAIL="rd.shell rd.break rd.debug"
-SERIAL="tcp:127.0.0.1:9999"
-SERIAL="null"
+#DEBUGFAIL="rd.shell rd.break rd.debug systemd.log_target=console loglevel=7 systemd.log_level=debug"
+#SERIAL="tcp:127.0.0.1:9999"
 
 run_server() {
     # Start server first
@@ -17,11 +16,12 @@ run_server() {
         -drive format=raw,index=0,media=disk,file=$TESTDIR/server.ext2 \
         -drive format=raw,index=1,media=disk,file=$TESTDIR/nbd.ext2 \
         -drive format=raw,index=2,media=disk,file=$TESTDIR/encrypted.ext2 \
-        -m 256M  -smp 2 \
+        -m 512M  -smp 2 \
         -display none \
         -net nic,macaddr=52:54:00:12:34:56,model=e1000 \
         -net socket,listen=127.0.0.1:12340 \
-        -serial $SERIAL \
+        ${SERIAL:+-serial "$SERIAL"} \
+        ${SERIAL:--serial file:"$TESTDIR"/server.log} \
         -no-reboot \
         -append "panic=1 root=/dev/sda rootfstype=ext2 rw quiet console=ttyS0,115200n81 selinux=0" \
         -initrd $TESTDIR/initramfs.server -pidfile $TESTDIR/server.pid -daemonize || return 1
@@ -187,7 +187,7 @@ client_run() {
 
 make_encrypted_root() {
     # Create the blank file to use as a root filesystem
-    dd if=/dev/null of=$TESTDIR/encrypted.ext2 bs=1M seek=20
+    dd if=/dev/null of=$TESTDIR/encrypted.ext2 bs=1M seek=40
     dd if=/dev/null of=$TESTDIR/flag.img bs=1M seek=1
 
     kernel=$KVERSION
@@ -249,7 +249,7 @@ make_encrypted_root() {
     $testdir/run-qemu \
         -drive format=raw,index=0,media=disk,file=$TESTDIR/flag.img \
         -drive format=raw,index=1,media=disk,file=$TESTDIR/encrypted.ext2 \
-        -m 256M  -smp 2\
+        -m 512M  -smp 2\
         -nographic -net none \
         -append "root=/dev/fakeroot rw quiet console=ttyS0,115200n81 selinux=0" \
         -initrd $TESTDIR/initramfs.makeroot  || return 1
@@ -258,7 +258,7 @@ make_encrypted_root() {
 }
 
 make_client_root() {
-    dd if=/dev/null of=$TESTDIR/nbd.ext2 bs=1M seek=30
+    dd if=/dev/null of=$TESTDIR/nbd.ext2 bs=1M seek=60
     mke2fs -F -j $TESTDIR/nbd.ext2
     mkdir $TESTDIR/mnt
     sudo mount -o loop $TESTDIR/nbd.ext2 $TESTDIR/mnt
@@ -299,7 +299,7 @@ make_client_root() {
 }
 
 make_server_root() {
-    dd if=/dev/null of=$TESTDIR/server.ext2 bs=1M seek=30
+    dd if=/dev/null of=$TESTDIR/server.ext2 bs=1M seek=60
     mke2fs -F $TESTDIR/server.ext2
     mkdir $TESTDIR/mnt
     sudo mount -o loop $TESTDIR/server.ext2 $TESTDIR/mnt
