@@ -15,13 +15,14 @@ usr/lib/dracut/modules.d/95dasd
 usr/lib/dracut/modules.d/95dasd_mod
 usr/lib/dracut/modules.d/95debug
 usr/lib/dracut/modules.d/95resume
+usr/lib/dracut/modules.d/95lunmask
 usr/lib/dracut/modules.d/95rootfs-block
 usr/lib/dracut/modules.d/95terminfo
 usr/lib/dracut/modules.d/95udev-rules
 usr/lib/dracut/modules.d/98syslog
 usr/lib/dracut/modules.d/98usrmount
 usr/lib/dracut/modules.d/99base
+usr/share/bash-completion/completions
 /var/lib/dracut
 /etc/dracut.conf.d
-/etc/bash_completion.d
 /etc/logrotate.d
