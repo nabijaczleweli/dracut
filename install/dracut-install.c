@@ -633,7 +633,7 @@ static int dracut_install(const char *src, const char *dst, bool isdir, bool res
 
         hashmap_put(items, i, i);
 
-        ret = asprintf(&fulldstpath, "%s/%s", destrootdir, dst);
+        ret = asprintf(&fulldstpath, "%s/%s", destrootdir, (dst[0]=='/' ? (dst+1) : dst));
         if (ret < 0) {
                 log_error("Out of memory!");
                 exit(EXIT_FAILURE);
@@ -720,7 +720,7 @@ static int dracut_install(const char *src, const char *dst, bool isdir, bool res
                 if (lstat(fulldstpath, &sb) != 0) {
                         _cleanup_free_ char *absdestpath = NULL;
 
-                        ret = asprintf(&absdestpath, "%s/%s", destrootdir, abspath);
+                        ret = asprintf(&absdestpath, "%s/%s", destrootdir, (abspath[0]=='/' ? (abspath+1) : abspath));
                         if (ret < 0) {
                                 log_error("Out of memory!");
                                 exit(EXIT_FAILURE);
@@ -933,13 +933,6 @@ static int parse_argv(int argc, char *argv[])
                         break;
                 case ARG_KERNELDIR:
                         kerneldir = strdup(optarg);
-                        if ((strncmp("/lib/modules/", kerneldir, 13) != 0)
-                            && (strncmp("/usr/lib/modules/", kerneldir, 17) != 0)) {
-                                char *p;
-                                p = strstr(kerneldir, "/lib/modules/");
-                                if (p != NULL)
-                                        kerneldirlen = p - kerneldir;
-                        }
                         break;
                 case ARG_FIRMWAREDIRS:
                         firmwaredirs = strv_split(optarg, ":");
@@ -1398,10 +1391,17 @@ static int install_modules(int argc, char **argv)
 
         struct kmod_module *mod = NULL, *mod_o = NULL;
 
-        const char *modname = NULL;
+        const char *abskpath = NULL;
+        char *p;
         int i;
 
         ctx = kmod_new(kerneldir, NULL);
+        abskpath = kmod_get_dirname(ctx);
+
+        p = strstr(abskpath, "/lib/modules/");
+        if (p != NULL)
+                kerneldirlen = p - abskpath;
+
         if (arg_hostonly) {
                 char *modalias_file;
                 modalias_file = getenv("DRACUT_KERNEL_MODALIASES");
@@ -1444,6 +1444,7 @@ static int install_modules(int argc, char **argv)
 
                 if (argv[i][0] == '/') {
                         _cleanup_kmod_module_unref_list_ struct kmod_list *modlist = NULL;
+			_cleanup_free_ const char *modname = NULL;
 
                         r = kmod_module_new_from_path(ctx, argv[i], &mod_o);
                         if (r < 0) {
@@ -1453,7 +1454,7 @@ static int install_modules(int argc, char **argv)
                                 continue;
                         }
                         /* Check, if we have to load another module with that name instead */
-                        modname = kmod_module_get_name(mod_o);
+                        modname = strdup(kmod_module_get_name(mod_o));
 
                         if (!modname) {
                                 if (!arg_optional) {
@@ -1529,6 +1530,7 @@ static int install_modules(int argc, char **argv)
 
                         for (FTSENT *ftsent = fts_read(fts); ftsent != NULL; ftsent = fts_read(fts)) {
                                 _cleanup_kmod_module_unref_list_ struct kmod_list *modlist = NULL;
+				_cleanup_free_ const char *modname = NULL;
 
                                 if((ftsent->fts_info == FTS_D) && !check_module_path(ftsent->fts_accpath)) {
                                         fts_set(fts, ftsent, FTS_SKIP);
@@ -1551,7 +1553,7 @@ static int install_modules(int argc, char **argv)
                                 }
 
                                 /* Check, if we have to load another module with that name instead */
-                                modname = kmod_module_get_name(mod_o);
+                                modname = strdup(kmod_module_get_name(mod_o));
 
                                 if (!modname) {
                                         log_error("Failed to get name for module '%s'", ftsent->fts_accpath);
@@ -1597,7 +1599,7 @@ static int install_modules(int argc, char **argv)
                         }
                 } else {
                         _cleanup_kmod_module_unref_list_ struct kmod_list *modlist = NULL;
-                        char *modname = argv[i];
+			char *modname = argv[i];
 
                         if (endswith(modname, ".ko")) {
                                 int len = strlen(modname);
