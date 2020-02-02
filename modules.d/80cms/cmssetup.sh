@@ -5,7 +5,7 @@
 type getarg >/dev/null 2>&1 || . /lib/dracut-lib.sh
 
 function sysecho () {
-    file=$1
+    file="$1"
     shift
     local i=1
     while [ $i -le 10 ] ; do
@@ -16,7 +16,11 @@ function sysecho () {
             break
         fi
     done
-    [ -f "$file" ] && echo $* > $file
+    local status
+    read status < "$file"
+    if [[ ! $status == $* ]]; then
+        [ -f "$file" ] && echo $* > "$file"
+    fi
 }
 
 function dasd_settle() {
@@ -169,8 +173,8 @@ processcmsfile()
     fi
 
     if [[ $DASD ]]; then
-	echo $DASD >> /etc/dasd.conf
-	echo "options dasd_mod dasd=$DASD" >> /etc/modprobe.d/dasd_mod.conf
+	echo $DASD | normalize_dasd_arg > /etc/dasd.conf
+	echo "options dasd_mod dasd=$DASD" > /etc/modprobe.d/dasd_mod.conf
 	dasd_cio_free
     fi
 

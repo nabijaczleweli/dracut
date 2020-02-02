@@ -4,17 +4,33 @@
 
 install() {
     local _i
-    # FIXME: would be nice if we didn't have to know which rules to grab....
+
+    systemdutildir=$(pkg-config systemd --variable=systemdutildir)
+    if ! [[ -d "$systemdutildir" ]]; then
+        [[ -d /lib/systemd ]] && systemdutildir=/lib/systemd
+        [[ -d /usr/lib/systemd ]] && systemdutildir=/usr/lib/systemd
+    fi
+
+    udevdir=$(pkg-config udev --variable=udevdir)
+    if ! [[ -d "$udevdir" ]]; then
+        [[ -d /lib/udev ]] && udevdir=/lib/udev
+        [[ -d /usr/lib/udev ]] && udevdir=/usr/lib/udev
+    fi
+
+    # Fixme: would be nice if we didn't have to know which rules to grab....
     # ultimately, /lib/initramfs/rules.d or somesuch which includes links/copies
     # of the rules we want so that we just copy those in would be best
     dracut_install udevadm
-    if [ -x /sbin/udevd ]; then
-        dracut_install udevd
-        mkdir -p ${initdir}/lib/systemd
-        ln -s /sbin/udevd ${initdir}/lib/systemd/systemd-udevd
-    elif [ -x /lib/systemd/systemd-udevd ]; then
-        inst /lib/systemd/systemd-udevd
-    fi
+    [ -d ${initdir}/lib/systemd ] || mkdir -p ${initdir}/lib/systemd
+    for _i in ${systemdutildir}/systemd-udevd ${udevdir}/udevd /sbin/udevd; do
+        [ -x "$_i" ] || continue
+        inst "$_i"
+
+        if ! [[ -f  ${initdir}/lib/systemd/systemd-udevd ]]; then
+            ln -s "$_i" ${initdir}/lib/systemd/systemd-udevd
+        fi
+        break
+    done
 
     for i in /etc/udev/udev.conf /etc/group; do
         inst_simple $i
@@ -36,12 +52,8 @@ install() {
     inst_dir /run/udev
     inst_dir /run/udev/rules.d
 
-    if [ ! -x /lib/udev/vol_id ]; then
-        dracut_install blkid
-        inst_rules "$moddir/59-persistent-storage.rules"
-    else
-        inst_rules "$moddir/59-persistent-storage-volid.rules"
-    fi
+    dracut_install blkid
+    inst_rules "$moddir/59-persistent-storage.rules"
     inst_rules "$moddir/61-persistent-storage.rules"
 
     for _i in \
@@ -59,22 +71,11 @@ install() {
         input_id \
         scsi_id \
         usb_id \
-        vol_id \
         pcmcia-socket-startup \
         pcmcia-check-broken-cis \
-        udevd \
         ; do
-        [ -e /lib/udev/$_i ] && dracut_install /lib/udev/$_i
-        [ -e /usr/lib/udev/$_i ] && dracut_install /usr/lib/udev/$_i
+        [ -e ${udevdir}/$_i ] && dracut_install ${udevdir}/$_i
     done
-
-    if ! [ -e "$initdir/sbin/udevd" ]; then
-        if [ -x /usr/lib/udev/udevd ]; then
-            ln -s /usr/lib/udev/udevd "$initdir/sbin/udevd"
-        elif [ -x /lib/udev/udevd ]; then
-            ln -s /lib/udev/udevd "$initdir/sbin/udevd"
-        fi
-    fi
 
     [ -f /etc/arch-release ] && \
         inst "$moddir/load-modules.sh" /lib/udev/load-modules.sh

@@ -31,11 +31,24 @@ fi
 # bridge this interface?
 if [ -e /tmp/bridge.info ]; then
     . /tmp/bridge.info
-    if [ "$netif" = "$ethname" ]; then
+    for ethname in $ethnames ; do
+        if [ "$netif" = "$ethname" ]; then
+            if [ "$netif" = "$bondname" ] && [ -n "$DO_BOND_SETUP" ] ; then
+                : # We need to really setup bond (recursive call)
+            else
+                netif="$bridgename"
+            fi
+        fi
+    done
+fi
+
+if [ -e /tmp/vlan.info ]; then
+    . /tmp/vlan.info
+    if [ "$netif" = "$phydevice" ]; then
         if [ "$netif" = "$bondname" ] && [ -n "$DO_BOND_SETUP" ] ; then
             : # We need to really setup bond (recursive call)
         else
-            netif="$bridgename"
+            netif="$vlanname"
         fi
     fi
 fi
@@ -145,7 +158,7 @@ if [ -e /tmp/bond.info ]; then
 
         for slave in $bondslaves ; do
             ip link set $slave down
-            ifenslave $bondname $slave
+            echo "+$slave" > /sys/class/net/$bondname/bonding/slaves
             ip link set $slave up
             wait_for_if_up $slave
         done
@@ -164,18 +177,40 @@ fi
 
 # XXX need error handling like dhclient-script
 
+if [ -e /tmp/bridge.info ]; then
+    . /tmp/bridge.info
 # start bridge if necessary
-if [ "$netif" = "$bridgename" ] && [ ! -e /tmp/net.$bridgename.up ]; then
-    if [ "$ethname" = "$bondname" ] ; then
-        DO_BOND_SETUP=yes ifup $bondname
-    else
-        ip link set $ethname up
+    if [ "$netif" = "$bridgename" ] && [ ! -e /tmp/net.$bridgename.up ]; then
+        brctl addbr $bridgename
+        brctl setfd $bridgename 0
+        for ethname in $ethnames ; do
+            if [ "$ethname" = "$bondname" ] ; then
+                DO_BOND_SETUP=yes ifup $bondname
+            else
+                ip link set $ethname up
+            fi
+            wait_for_if_up $ethname
+            brctl addif $bridgename $ethname
+        done
     fi
-    wait_for_if_up $ethname
-    # Create bridge and add eth to bridge
-    brctl addbr $bridgename
-    brctl setfd $bridgename 0
-    brctl addif $bridgename $ethname
+fi
+
+get_vid() {
+    case "$1" in
+    vlan*)
+        return ${1#vlan}
+        ;;
+    *.*)
+        return ${1##*.}
+        ;;
+    esac
+}
+
+if [ "$netif" = "$vlanname" ] && [ ! -e /tmp/net.$vlanname.up ]; then
+    modprobe 8021q
+    ip link set "$phydevice" up
+    wait_for_if_up "$phydevice"
+    ip link add dev "$vlanname" link "$phydevice" type vlan id "$(get_vid $vlanname; echo $?)"
 fi
 
 # No ip lines default to dhcp

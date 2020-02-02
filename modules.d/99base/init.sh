@@ -19,6 +19,7 @@ export PATH
 
 RD_DEBUG=""
 . /lib/dracut-lib.sh
+
 trap "emergency_shell Signal caught!" 0
 
 [ -c /dev/null ] || mknod -m 0666 /dev/null c 1 3
@@ -38,12 +39,6 @@ else
 fi
 
 setdebug
-
-if [ "$RD_DEBUG" = "yes" ]; then
-    getarg quiet && DRACUT_QUIET="yes"
-    a=$(getarg loglevel=)
-    [ -n "$a" ] && [ $a -ge 8 ] && unset DRACUT_QUIET
-fi
 
 if ! ismounted /dev; then
     mount -t devtmpfs -o mode=0755,nosuid,strictatime devtmpfs /dev >/dev/null 
@@ -93,6 +88,9 @@ if [ "$RD_DEBUG" = "yes" ]; then
 else
     exec 0<>/dev/console 1<>/dev/console 2<>/dev/console
 fi
+
+[ -f /etc/initrd-release ] && . /etc/initrd-release
+[ -n "$VERSION" ] && info "dracut-$VERSION"
 
 source_conf /etc/conf.d
 
@@ -239,7 +237,7 @@ for i in "$(getarg real_init=)" "$(getarg init=)" $(getargs rd.distroinit=) /sbi
     [ -n "$i" ] || continue
 
     __p=$(readlink -f "${NEWROOT}/${i}")
-    if [ -x "$__p" ]; then
+    if [ -x "$__p" -o -x "${NEWROOT}/${__p}" ]; then
         INIT="$i"
         break
     fi
@@ -256,8 +254,8 @@ if [ $UDEVVERSION -lt 168 ]; then
     udevadm control --stop-exec-queue
 
     HARD=""
-    while pidof udevd >/dev/null 2>&1; do
-        for pid in $(pidof udevd); do
+    while pidof systemd-udevd >/dev/null 2>&1; do
+        for pid in $(pidof systemd-udevd); do
             kill $HARD $pid >/dev/null 2>&1
         done
         HARD="-9"
