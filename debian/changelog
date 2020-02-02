@@ -1,3 +1,11 @@
+dracut (048+80-2+swapfile) unstable; urgency=medium
+
+  * allow resuming from file in hostonly mode if there's a swap file active,
+    closes https://github.com/dracutdevs/dracut/issues/496,
+    introduced in https://github.com/dracutdevs/dracut/commit/34b56de12aad622d602d6e3bd434e02c840f1cd0
+
+ -- nabijaczleweli <nabijaczleweli@gmail.com>  Sun, 02 Feb 2020 18:42:34 +0100
+
 dracut (048+80-2) unstable; urgency=medium
 
   * fix bashism in several scripts, Closes: #772260
