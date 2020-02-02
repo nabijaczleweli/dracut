@@ -1,0 +1,40 @@
+#!/bin/sh
+
+. /lib/dracut-lib.sh
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+	--onetime)
+	    onetime="yes";;
+	--settled)
+	    settled="-settled";;
+	--unique)
+	    unique="yes";;
+	--name)
+	    name="$2";shift;;
+	*)
+	    break;;
+    esac
+    shift
+done
+
+if [ -z "$unique" ]; then
+	job="${name}$$"
+else
+	job="${name:-$1}"
+	job=${job##*/}
+fi
+
+
+if [ -n "$onetime" ]; then
+   { 
+       echo '[ -e "$job" ] && rm "$job"'
+       echo "$@" 
+   } > "/tmp/$$-${job}.sh"
+else
+   echo "$@" > "/tmp/$$-${job}.sh"
+fi
+
+mv -f "/tmp/$$-${job}.sh" "/initqueue${settled}/${job}.sh"
+[ -z "$settled" ] && >> /initqueue/work
+

@@ -1,0 +1,167 @@
+#!/bin/sh
+#
+# We don't need to check for ip= errors here, that is handled by the
+# cmdline parser script
+#
+PATH=$PATH:/sbin:/usr/sbin
+
+. /lib/dracut-lib.sh
+
+# Run dhclient
+do_dhcp() {
+    # /sbin/dhclient-script will mark the netif up and generate the online
+    # event for nfsroot
+    # XXX add -V vendor class and option parsing per kernel
+    dhclient "$@" -1 -q -cf /etc/dhclient.conf -pf /tmp/dhclient.$netif.pid -lf /tmp/dhclient.$netif.lease $netif
+}
+
+load_ipv6() {
+    modprobe ipv6
+    i=0
+    while [ ! -d /proc/sys/net/ipv6 ]; do
+	i=$(($i+1))
+	[ $i -gt 10 ] && break
+	sleep 0.1
+    done
+}
+
+do_ipv6auto() {
+    load_ipv6
+    {
+        echo 0 > /proc/sys/net/ipv6/conf/$netif/forwarding 
+        echo 1 > /proc/sys/net/ipv6/conf/$netif/accept_ra
+        echo 1 > /proc/sys/net/ipv6/conf/$netif/accept_redirects
+	echo ip link set $netif up 
+	echo wait_for_if_up $netif
+    } > /tmp/net.$netif.up
+
+    [ -n "$hostname" ] && echo "echo $hostname > /proc/sys/kernel/hostname" > /tmp/net.$netif.hostname
+
+    namesrv=$(getargs nameserver)
+    if  [ -n "$namesrv" ] ; then
+	for s in $namesrv; do
+	    echo nameserver $s 
+	done
+    fi >> /tmp/net.$netif.resolv.conf
+
+
+    echo online > /sys/class/net/$netif/uevent
+    /sbin/initqueue --onetime --name netroot-$netif  /sbin/netroot $netif 
+}
+
+# Handle static ip configuration
+do_static() {
+    strstr $ip '*:*:*' && load_ipv6
+
+    {
+	echo ip link set $netif up 
+	echo wait_for_if_up $netif
+	# do not flush addr for ipv6
+	strstr $ip '*:*:*' || \
+	    echo ip addr flush dev $netif
+	echo ip addr add $ip/$mask dev $netif
+    } > /tmp/net.$netif.up
+
+    [ -n "$gw" ] && echo ip route add default via $gw dev $netif > /tmp/net.$netif.gw
+    [ -n "$hostname" ] && echo "echo $hostname > /proc/sys/kernel/hostname" > /tmp/net.$netif.hostname
+
+    namesrv=$(getargs nameserver)
+    if  [ -n "$namesrv" ] ; then
+	for s in $namesrv; do
+	    echo nameserver $s 
+	done
+    fi >> /tmp/net.$netif.resolv.conf
+
+    echo online > /sys/class/net/$netif/uevent
+    /sbin/initqueue --onetime --name netroot-$netif  /sbin/netroot $netif 
+}
+
+PATH=$PATH:/sbin:/usr/sbin
+
+. /lib/dracut-lib.sh
+
+if getarg rdnetdebug ; then
+    exec >/tmp/ifup.$1.$$.out
+    exec 2>>/tmp/ifup.$1.$$.out
+    set -x
+fi
+
+# Huh? No $1?
+[ -z "$1" ] && exit 1
+
+# $netif reads easier than $1
+netif=$1
+
+# bridge this interface?
+if [ -e /tmp/bridge.info ]; then
+    . /tmp/bridge.info
+    if [ "$netif" = "$ethname" ]; then
+        netif="$bridgename"
+    fi
+fi
+
+# bail immediately if the interface is already up
+# or we don't need the network
+[ -f "/tmp/net.$netif.up" ] && exit 0
+[ -f "/tmp/root.info" ] || exit 0
+. /tmp/root.info
+[ -z "$netroot" ] && exit 0
+
+# loopback is always handled the same way
+if [ "$netif" = "lo" ] ; then
+    ip link set lo up
+    ip addr add 127.0.0.1/8 dev lo
+    >/tmp/net.$netif.up
+    exit 0
+fi
+
+# XXX need error handling like dhclient-script
+
+# start bridge if necessary
+if [ "$netif" = "$bridgename" ] && [ ! -e /tmp/net.$bridgename.up ]; then
+    ip link set $ethname up
+    wait_for_if_up $ethname
+    # Create bridge and add eth to bridge
+    brctl addbr $bridgename
+    brctl setfd $bridgename 0
+    brctl addif $bridgename $ethname
+fi
+
+# No ip lines default to dhcp
+ip=$(getarg ip)
+
+if [ -z "$ip" ]; then
+    if [ "$netroot" = "dhcp6" ]; then
+	do_dhcp -6
+    else
+	do_dhcp -4
+    fi
+fi
+
+# Specific configuration, spin through the kernel command line
+# looking for ip= lines
+for p in $(getargs ip=); do
+    ip_to_var $p
+	
+    # If this option isn't directed at our interface, skip it
+    [ -n "$dev" ] && [ "$dev" != "$netif" ] && continue
+
+    # Store config for later use
+    for i in ip srv gw mask hostname; do
+	eval '[ "$'$i'" ] && echo '$i'="$'$i'"'
+    done > /tmp/net.$netif.override
+
+    case $autoconf in
+	dhcp|on|any)
+	    do_dhcp -4 ;;
+	dhcp6)
+	    do_dhcp -6 ;;
+	auto6)
+	    do_ipv6auto ;;
+        *) 
+	    do_static ;;
+    esac
+    break
+done
+
+exit 0

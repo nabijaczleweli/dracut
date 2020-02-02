@@ -1,0 +1,85 @@
+# This file causes block devices with Linux RAID (mdadm) signatures to
+# automatically cause mdadm to be run.
+# See udev(8) for syntax
+
+ACTION!="add|change", GOTO="md_inc_end"
+SUBSYSTEM!="block", GOTO="md_inc_end"
+ENV{ID_FS_TYPE}!="linux_raid_member|isw_raid_member", GOTO="md_inc_end"
+
+ENV{ID_FS_TYPE}=="isw_raid_member", ENV{rd_NO_MDIMSM}=="?*", GOTO="md_inc_end"
+
+ENV{rd_NO_MD}=="?*", GOTO="md_inc_end"
+
+PROGRAM=="/bin/sh -c 'for i in $sys/$devpath/holders/md[0-9]*; do [ -e $$i ] && exit 0; done; exit 1;' ", \
+    GOTO="md_inc_end"
+
+ENV{DEVTYPE}!="partition", \
+    RUN+="/sbin/partx -d --nr 1-1024 $env{DEVNAME}"
+
+KERNEL!="md*", IMPORT{program}="/sbin/mdadm --examine --export $tempnode"
+
+# UUID CHECK
+
+LABEL="do_md_inc"
+
+# 
+# if rd_MDADMCONF do not assemble incrementally
+# defer auto assembly until the udev queue is settled
+# 
+ENV{rd_MDADMCONF}!="?*", GOTO="md_auto_end"
+
+RUN+="/bin/sh -c 'ln -s /sbin/md_finished.sh /initqueue-finished/md_finished.sh;/sbin/initqueue --settled --onetime --unique /sbin/mdadm_auto'"
+
+GOTO="md_inc_end"
+
+LABEL="md_auto_end"
+
+#
+# Incrementally build the md array
+#
+RUN+="/sbin/mdadm -I --no-degraded $env{DEVNAME}"
+
+RUN+="/bin/ln -s /sbin/md_finished.sh /initqueue-finished/md_finished.sh"
+
+LABEL="md_inc_end"
+
+#
+# Handle non-container raid arrays
+#
+ACTION=="add|change", \
+	KERNEL=="md[0-9]*|md/*", \
+	ENV{MD_LEVEL}!="container", \
+	ENV{MD_CONTAINER}!="?*", \
+        ENV{rd_MDADMCONF}!="?*", \
+        ENV{rd_NO_MD}!="?*", \
+	GOTO="do_raidstart"
+
+GOTO="end_raidstart"
+
+LABEL="do_raidstart"
+
+# check if array is not inactive anymore
+TEST=="md/array_state", ATTR{md/array_state}!="|inactive", GOTO="end_raidstart"
+
+RUN+="/bin/sh -c 'ln -s /sbin/md_finished.sh /initqueue-finished/md_finished.sh;/sbin/initqueue --settled --onetime --unique /sbin/mdraid_start'"
+
+LABEL="end_raidstart"
+
+#
+# Handle container raid arrays
+#
+ACTION=="add|change", \
+	KERNEL=="md[0-9]*|md/*", \
+	ENV{DEVTYPE}!="partition", \
+	ENV{MD_LEVEL}=="container", \
+        ENV{rd_MDADMCONF}!="?*", \
+        ENV{rd_NO_MD}!="?*", \
+	GOTO="do_container"
+
+GOTO="end_container"
+
+LABEL="do_container"
+
+RUN+="/bin/sh -c 'ln -s /sbin/md_finished.sh /initqueue-finished/md_finished.sh;/sbin/initqueue --settled --onetime --unique --name mdcontainer_start-%k /sbin/mdcontainer_start $env{DEVNAME}'"
+
+LABEL="end_container"

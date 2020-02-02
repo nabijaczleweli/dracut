@@ -1,0 +1,12 @@
+#!/bin/sh
+# We depend on network modules being loaded
+[ "$1" = "-d" ] && echo network
+
+# If hostonly was requested, fail the check if we are not actually
+# booting from root.
+[ "$1" = "-h" ] && ! egrep -q '/ nfs[34 ]' /proc/mounts && exit 1
+
+# If our prerequisites are not met, fail anyways.
+which rpcbind >/dev/null 2>&1 || which portmap >/dev/null 2>&1 || exit 1
+which rpc.statd mount.nfs mount.nfs4 umount >/dev/null 2>&1 || exit 1
+exit 0

@@ -1,0 +1,9 @@
+#!/bin/bash
+
+modinfo -k $kernel dm_mod >/dev/null 2>&1 && \
+    inst_hook pre-udev 30 "$moddir/dm-pre-udev.sh"
+
+inst dmsetup
+
+inst dmeventd
+inst_rules 10-dm.rules 95-dm-notify.rules
