@@ -1,2 +1,24 @@
-See https://sourceforge.net/apps/trac/dracut/wiki/TODO
+Current TODO list, broken into things which are relevant for the initramfs itself (/init et al) vs the generator. A lot of things are/should be marked with "FIXME" in the code
+INITRAMFS TODO
+
+- The hard-coded list of udev rules that we care about is kind of lame.
+- automatic kexec fallback
+- panic fallback
+- fsck for $NEWROOT/usr
+
+GENERATOR TODO
+
+- Default module specification could use some work
+- udev rule copying, as mentioned above, is a bit too hard-coded
+- pkg-config integration, to make it easy for other packages to use us.
+- add recovery image creator (mkrecovery)
+
+CODE TODO
+- document functions
+- make function vars local, and prefix with "_"
+
+Future Enhancement Requests
+
+- run ssh server to enter crypto password or perform debugging (supported by debian)
+- Bug 524727 - Dracut + encrypted root + networking
 

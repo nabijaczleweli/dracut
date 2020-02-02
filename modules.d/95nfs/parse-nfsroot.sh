@@ -1,29 +1,31 @@
 #!/bin/sh
+# -*- mode: shell-script; indent-tabs-mode: nil; sh-basic-offset: 4; -*-
+# ex: ts=8 sw=4 sts=4 et filetype=sh
 #
 # Preferred format:
-#	root=nfs[4]:[server:]path[:options]
+#       root=nfs[4]:[server:]path[:options]
 #
 # This syntax can come from DHCP root-path as well.
 #
 # Legacy format:
-#	root=/dev/nfs nfsroot=[server:]path[,options]
+#       root=/dev/nfs nfsroot=[server:]path[,options]
 #
 # In Legacy root=/dev/nfs mode, if the 'nfsroot' parameter is not given
-# on the command line or is empty, the dhcp root-path is used as 
+# on the command line or is empty, the dhcp root-path is used as
 # [server:]path[:options] or the default "/tftpboot/%s" will be used.
 #
 # If server is unspecified it will be pulled from one of the following
 # sources, in order:
-#	static ip= option on kernel command line
-#	DHCP next-server option
-#	DHCP server-id option
+#       static ip= option on kernel command line
+#       DHCP next-server option
+#       DHCP server-id option
 #       DHCP root-path option
 #
 # NFSv4 is only used if explicitly requested with nfs4: prefix, otherwise
 # NFSv3 is used.
 #
 
-. /lib/dracut-lib.sh
+type getarg >/dev/null 2>&1 || . /lib/dracut-lib.sh
 
 #Don't continue if root is ok
 [ -n "$rootok" ] && return
@@ -42,14 +44,14 @@ if [ -n "$netroot" ] ; then
     fi
 else
     netroot=$root;
-fi 
+fi
 
 # LEGACY: nfsroot= is valid only if root=/dev/nfs
 if [ -n "$nfsroot" ] ; then
     # @deprecated
     warn "Argument nfsroot is deprecated and might be removed in a future release. See http://apps.sourceforge.net/trac/dracut/wiki/commandline for more information."
     if [ "$(getarg root=)" != "/dev/nfs"  ]; then
-	die "Argument nfsroot only accepted for legacy root=/dev/nfs"
+        die "Argument nfsroot only accepted for legacy root=/dev/nfs"
     fi
     netroot=nfs:$nfsroot;
 fi
@@ -57,9 +59,9 @@ fi
 case "$netroot" in
     /dev/nfs) netroot=nfs;;
     /dev/*) unset netroot; return;;
-# LEGACY: root=<server-ip>:/<path
+    # LEGACY: root=<server-ip>:/<path
     [0-9]*:/*|[0-9]*\.[0-9]*\.[0-9]*[!:]|/*)
-       netroot=nfs:$netroot;;
+        netroot=nfs:$netroot;;
 esac
 
 # Continue if nfs
@@ -70,11 +72,11 @@ esac
 
 # Check required arguments
 
-if nfsdomain=$(getarg rd_NFS_DOMAIN); then
+if nfsdomain=$(getarg rd.nfs.domain rd_NFS_DOMAIN); then
     if [ -f /etc/idmapd.conf ]; then
-	sed -i -e \
-	    "s/^[[:space:]#]*Domain[[:space:]]*=.*/Domain = $nfsdomain/g" \
-	    /etc/idmapd.conf
+        sed -i -e \
+            "s/^[[:space:]#]*Domain[[:space:]]*=.*/Domain = $nfsdomain/g" \
+            /etc/idmapd.conf
     fi
     # and even again after the sed, in case it was not yet specified
     echo "Domain = $nfsdomain" >> /etc/idmapd.conf
@@ -104,8 +106,8 @@ fi;
 # Done, all good!
 rootok=1
 
-# Shut up init error check or make sure that block parser wont get 
+# Shut up init error check or make sure that block parser wont get
 # confused by having /dev/nfs[4]
 root="$fstype"
 
-echo '[ -e $NEWROOT/proc ]' > /initqueue-finished/nfsroot.sh
+echo '[ -e $NEWROOT/proc ]' > $hookdir/initqueue/finished/nfsroot.sh

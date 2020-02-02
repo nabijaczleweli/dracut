@@ -1,5 +1,0 @@
-#!/bin/bash
-inst nbd-client
-inst_hook cmdline 90 "$moddir/parse-nbdroot.sh"
-
-inst "$moddir/nbdroot" "/sbin/nbdroot"

@@ -22,13 +22,13 @@ KERNEL!="md*", IMPORT{program}="/sbin/mdadm --examine --export $tempnode"
 
 LABEL="do_md_inc"
 
-# 
+#
 # if rd_MDADMCONF do not assemble incrementally
 # defer auto assembly until the udev queue is settled
-# 
+#
 ENV{rd_MDADMCONF}!="?*", GOTO="md_auto_end"
 
-RUN+="/bin/sh -c 'ln -s /sbin/md_finished.sh /initqueue-finished/md_finished.sh;/sbin/initqueue --settled --onetime --unique /sbin/mdadm_auto'"
+RUN+="/bin/sh -c 'ln -s /sbin/md_finished.sh $hookdir/initqueue/finished/md_finished.sh;/sbin/initqueue --settled --onetime --unique /sbin/mdadm_auto'"
 
 GOTO="md_inc_end"
 
@@ -37,9 +37,9 @@ LABEL="md_auto_end"
 #
 # Incrementally build the md array
 #
-RUN+="/sbin/mdadm -I --no-degraded $env{DEVNAME}"
+RUN+="/sbin/mdadm -I $env{DEVNAME}"
 
-RUN+="/bin/ln -s /sbin/md_finished.sh /initqueue-finished/md_finished.sh"
+RUN+="/bin/ln -s /sbin/md_finished.sh $hookdir/initqueue/finished/md_finished.sh"
 
 LABEL="md_inc_end"
 
@@ -61,7 +61,7 @@ LABEL="do_raidstart"
 # check if array is not inactive anymore
 TEST=="md/array_state", ATTR{md/array_state}!="|inactive", GOTO="end_raidstart"
 
-RUN+="/bin/sh -c 'ln -s /sbin/md_finished.sh /initqueue-finished/md_finished.sh;/sbin/initqueue --settled --onetime --unique /sbin/mdraid_start'"
+RUN+="/bin/sh -c 'ln -s /sbin/md_finished.sh $hookdir/initqueue/finished/md_finished.sh;/sbin/initqueue --settled --onetime --unique /sbin/mdraid_start'"
 
 LABEL="end_raidstart"
 
@@ -80,6 +80,6 @@ GOTO="end_container"
 
 LABEL="do_container"
 
-RUN+="/bin/sh -c 'ln -s /sbin/md_finished.sh /initqueue-finished/md_finished.sh;/sbin/initqueue --settled --onetime --unique --name mdcontainer_start-%k /sbin/mdcontainer_start $env{DEVNAME}'"
+RUN+="/bin/sh -c 'ln -s /sbin/md_finished.sh $hookdir/initqueue/finished/md_finished.sh;/sbin/initqueue --settled --onetime --unique --name mdcontainer_start-%k /sbin/mdcontainer_start $env{DEVNAME}'"
 
 LABEL="end_container"

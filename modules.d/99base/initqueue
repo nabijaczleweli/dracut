@@ -1,40 +1,55 @@
 #!/bin/sh
+# -*- mode: shell-script; indent-tabs-mode: nil; sh-basic-offset: 4; -*-
+# ex: ts=8 sw=4 sts=4 et filetype=sh
+#
+# Licensed under the GPLv2+
+#
+# Copyright 2008-2010, Red Hat, Inc.
+# Harald Hoyer <harald@redhat.com>
 
-. /lib/dracut-lib.sh
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+type getarg >/dev/null 2>&1 || . /lib/dracut-lib.sh
 
 while [ $# -gt 0 ]; do
     case "$1" in
-	--onetime)
-	    onetime="yes";;
-	--settled)
-	    settled="-settled";;
-	--unique)
-	    unique="yes";;
-	--name)
-	    name="$2";shift;;
-	*)
-	    break;;
+        --onetime)
+            onetime="yes";;
+        --settled)
+            qname="/settled";;
+        --finished)
+            qname="/finished";;
+        --unique)
+            unique="yes";;
+        --name)
+            name="$2";shift;;
+        *)
+            break;;
     esac
     shift
 done
 
 if [ -z "$unique" ]; then
-	job="${name}$$"
+    job="${name}$$"
 else
-	job="${name:-$1}"
-	job=${job##*/}
+    job="${name:-$1}"
+    job=${job##*/}
 fi
 
+exe=$1
+shift
+
+[ -x "$exe" ] || exe=$(command -v $exe)
 
 if [ -n "$onetime" ]; then
-   { 
-       echo '[ -e "$job" ] && rm "$job"'
-       echo "$@" 
-   } > "/tmp/$$-${job}.sh"
+    {
+        echo '[ -e "$job" ] && rm "$job"'
+        echo "$exe $@"
+    } > "/tmp/$$-${job}.sh"
 else
-   echo "$@" > "/tmp/$$-${job}.sh"
+    echo "$exe $@" > "/tmp/$$-${job}.sh"
 fi
 
-mv -f "/tmp/$$-${job}.sh" "/initqueue${settled}/${job}.sh"
-[ -z "$settled" ] && >> /initqueue/work
+mv -f "/tmp/$$-${job}.sh" "$hookdir/initqueue${qname}/${job}.sh"
+[ -z "$qname" ] && >> $hookdir/initqueue/work
 
