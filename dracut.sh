@@ -527,22 +527,15 @@ ddebug "Executing $0 $dracut_args"
 }
 
 # Detect lib paths
-if ! [[ $libdir ]] || ! [[ $usrlibdir ]] ; then
+if ! [[ $libdirs ]] ; then
     if strstr "$(ldd /bin/sh)" "/lib64/" &>/dev/null \
         && [[ -d /lib64 ]]; then
-        libdir=/lib64
-        usrlibdir=/usr/lib64
+        libdirs+=" /lib64"
+        [[ -d /usr/lib64 ]] && libdirs+=" /usr/lib64"
     else
-        libdir=/lib
-        usrlibdir=/usr/lib
+        libdirs+=" /lib"
+        [[ -d /usr/lib ]] && libdirs+=" /usr/lib"
     fi
-    for i in $libdir $usrlibdir; do
-        if [[ -d $i ]]; then
-            libdirs+=" $i"
-        else
-            dwarn 'No $i directory??!!'
-        fi
-    done
 fi
 
 # This is kinda legacy -- eventually it should go away.
@@ -561,6 +554,11 @@ srcmods="/lib/modules/$kernel/"
     srcmods="$drivers_dir"
 }
 export srcmods
+
+[[ -f $srcmods/modules.dep ]] || {
+    dfatal "$srcmods/modules.dep is missing. Did you run depmod?"
+    exit 1
+}
 
 if [[ -f $outfile && ! $force ]]; then
     dfatal "Will not override existing initramfs ($outfile) without --force"
@@ -657,13 +655,31 @@ for dev in "${host_devs[@]}"; do
     done
 done
 
+[[ -d $udevdir ]] \
+    || udevdir=$(pkg-config udev --variable=udevdir 2>/dev/null)
+if ! [[ -d "$udevdir" ]]; then
+    [[ -d /lib/udev ]] && udevdir=/lib/udev
+    [[ -d /usr/lib/udev ]] && udevdir=/usr/lib/udev
+fi
+
+[[ -d $systemdutildir ]] \
+    || systemdutildir=$(pkg-config systemd --variable=systemdutildir 2>/dev/null)
+[[ -d $systemdsystemunitdir ]] \
+    || systemdsystemunitdir=$(pkg-config systemd --variable=systemdsystemunitdir 2>/dev/null)
+
+if ! [[ -d "$systemdutildir" ]]; then
+    [[ -d /lib/systemd ]] && systemdutildir=/lib/systemd
+    [[ -d /usr/lib/systemd ]] && systemdutildir=/usr/lib/systemd
+fi
+[[ -d "$systemdsystemunitdir" ]] || systemdsystemunitdir=${systemdutildir}/system
+
 export initdir dracutbasedir dracutmodules drivers \
     fw_dir drivers_dir debug no_kernel kernel_only \
     add_drivers omit_drivers mdadmconf lvmconf filesystems \
-    use_fstab fstab_lines libdir usrlibdir fscks nofscks \
+    use_fstab fstab_lines libdirs fscks nofscks \
     stdloglvl sysloglvl fileloglvl kmsgloglvl logfile \
     debug host_fs_types host_devs sshkey add_fstab \
-    DRACUT_VERSION
+    DRACUT_VERSION udevdir systemdutildir systemdsystemunitdir
 
 # Create some directory structure first
 [[ $prefix ]] && mkdir -m 0755 -p "${initdir}${prefix}"
@@ -672,13 +688,13 @@ export initdir dracutbasedir dracutmodules drivers \
 [[ $prefix ]] && ln -sfn "${prefix#/}/lib" "$initdir/lib"
 
 if [[ $prefix ]]; then
-    for d in bin etc lib "$libdir" sbin tmp usr var; do
+    for d in bin etc lib $libdirs sbin tmp usr var; do
         ln -sfn "${prefix#/}/${d#/}" "$initdir/$d"
     done
 fi
 
 if [[ $kernel_only != yes ]]; then
-    for d in usr/bin usr/sbin bin etc lib "$libdir" sbin tmp usr var var/log var/run var/lock; do
+    for d in usr/bin usr/sbin bin etc lib $libdirs sbin tmp usr var var/log var/run var/lock; do
         [[ -e "${initdir}${prefix}/$d" ]] && continue
         if [ -L "/$d" ]; then
             inst_symlink "/$d" "${prefix}/$d"
