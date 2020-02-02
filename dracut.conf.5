@@ -2,12 +2,12 @@
 .\"     Title: dracut.conf
 .\"    Author: [see the "AUTHOR" section]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 09/12/2013
+.\"      Date: 10/07/2013
 .\"    Manual: dracut
 .\"    Source: dracut
 .\"  Language: English
 .\"
-.TH "DRACUT\&.CONF" "5" "09/12/2013" "dracut" "dracut"
+.TH "DRACUT\&.CONF" "5" "10/07/2013" "dracut" "dracut"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -96,6 +96,11 @@ Specify additional files to include in the initramfs, separated by spaces\&.
 \fBdo_strip=\fR"\fI{yes|no}\fR"
 .RS 4
 Strip binaries in the initramfs (default=yes)
+.RE
+.PP
+\fBdo_prelink=\fR"\fI{yes|no}\fR"
+.RS 4
+Prelink binaries in the initramfs (default=yes)
 .RE
 .PP
 \fBhostonly=\fR"\fI{yes|no}\fR"
@@ -203,6 +208,18 @@ Only install kernel drivers and firmware files\&. (default=no)
 \fBno_kernel=\fR"{yes|no}"
 .RS 4
 Do not install kernel drivers and firmware files (default=no)
+.RE
+.PP
+\fBacpi_override=\fR"{yes|no}"
+.RS 4
+[WARNING] ONLY USE THIS IF YOU KNOW WHAT YOU ARE DOING!
+
+Override BIOS provided ACPI tables\&. For further documentation read Documentation/acpi/initrd_table_override\&.txt in the kernel sources\&. Search for ACPI table files (must have \&.aml suffix) in acpi_table_dir= directory (see below) and add them to a separate uncompressed cpio archive\&. This cpio archive gets glued (concatenated, uncompressed one must be the first one) to the compressed cpio archive\&. The first, uncompressed cpio archive is for data which the kernel must be able to access very early (and cannot make use of uncompress alogrithms yet) like microcode or ACPI tables (default=no)\&.
+.RE
+.PP
+\fBacpi_table_dir=\fR"\fI<dir>\fR"
+.RS 4
+Directory to search for ACPI tables if acpi_override= is set to yes\&.
 .RE
 .PP
 \fBearly_microcode=\fR"{yes|no}"
