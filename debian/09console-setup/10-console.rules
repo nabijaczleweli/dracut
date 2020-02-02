@@ -1,2 +1,0 @@
-# Console initialization - keyboard, font, etc.
-KERNEL=="tty0",		RUN+="/sbin/initqueue --onetime --unique --name console-setup /lib/udev/console-setup"
