@@ -1,0 +1,14 @@
+--- a/modules.d/99base/init.sh
++++ b/modules.d/99base/init.sh
+@@ -57,11 +57,6 @@
+     mount -t devpts -o gid=5,mode=620,noexec,nosuid devpts /dev/pts >/dev/null
+ fi
+ 
+-if ! ismounted /dev/shm; then
+-    mkdir -m 0755 /dev/shm
+-    mount -t tmpfs -o mode=1777,noexec,nosuid,nodev,strictatime tmpfs /dev/shm >/dev/null
+-fi
+-
+ if ! ismounted /run; then
+     mkdir -m 0755 /newrun
+     if ! str_starts "$(readlink -f /bin/sh)" "/run/"; then
