@@ -1,0 +1,12 @@
+diff --git a/modules.d/01systemd-initrd/module-setup.sh b/modules.d/01systemd-initrd/module-setup.sh
+index c1ccd2a..30f1868 100755
+--- a/modules.d/01systemd-initrd/module-setup.sh
++++ b/modules.d/01systemd-initrd/module-setup.sh
+@@ -61,6 +61,7 @@ install() {
+         echo PRETTY_NAME=\"$PRETTY_NAME\"
+         echo ANSI_COLOR=\"$ANSI_COLOR\"
+     } > $initdir/usr/lib/initrd-release
++    mkdir -p "$(dirname "$initdir/lib/dracut/dracut-$DRACUT_VERSION")"
+     echo dracut-$DRACUT_VERSION > $initdir/lib/dracut/dracut-$DRACUT_VERSION
+     ln -sf ../usr/lib/initrd-release $initdir/etc/initrd-release
+     ln -sf initrd-release $initdir/usr/lib/os-release

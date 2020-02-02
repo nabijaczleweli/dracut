@@ -8,3 +8,4 @@ libdir
 initramfs-restore
 dev-shm-mount
 resume-file
+version-path
