@@ -90,18 +90,12 @@ if [ -n "$iscsi_firmware" ]; then
     initqueue --unique --onetime --settled /sbin/iscsiroot online "iscsi:" "'$NEWROOT'"
 fi
 
-if [ -z "$netroot" ] || ! [ "${netroot%%:*}" = "iscsi" ]; then
-    return 1
-fi
-
-initqueue --unique --onetime --timeout /sbin/iscsiroot timeout "$netroot" "$NEWROOT"
-
-initqueue --onetime modprobe --all -b -q qla4xxx cxgb3i cxgb4i bnx2i be2iscsi
-
 # ISCSI actually supported?
 if ! [ -e /sys/module/iscsi_tcp ]; then
     modprobe -b -q iscsi_tcp || die "iscsiroot requested but kernel/initrd does not support iscsi"
 fi
+
+modprobe --all -b -q qla4xxx cxgb3i cxgb4i bnx2i be2iscsi
 
 if [ -n "$netroot" ] && [ "$root" != "/dev/root" ] && [ "$root" != "dhcp" ]; then
     if ! getargbool 1 rd.neednet >/dev/null || ! getarg "ip="; then
@@ -116,6 +110,11 @@ if arg=$(getarg rd.iscsi.initiator -d iscsi_initiator=) && [ -n "$arg" ] && ! [ 
     if ! [ -e /etc/iscsi/initiatorname.iscsi ]; then
         mkdir -p /etc/iscsi
         ln -fs /run/initiatorname.iscsi /etc/iscsi/initiatorname.iscsi
+        if [ -n "$DRACUT_SYSTEMD" ]; then
+            systemctl try-restart iscsid
+            # FIXME: iscsid is not yet ready, when the service is :-/
+            sleep 1
+        fi
     fi
 fi
 
@@ -128,9 +127,19 @@ if [ -z $iscsi_initiator ] && [ -f /sys/firmware/ibft/initiator/initiator-name ]
         mkdir -p /etc/iscsi
         ln -fs /run/initiatorname.iscsi /etc/iscsi/initiatorname.iscsi
         > /tmp/iscsi_set_initiator
+        if [ -n "$DRACUT_SYSTEMD" ]; then
+            systemctl try-restart iscsid
+            # FIXME: iscsid is not yet ready, when the service is :-/
+            sleep 1
+        fi
     fi
 fi
 
+if [ -z "$netroot" ] || ! [ "${netroot%%:*}" = "iscsi" ]; then
+    return 1
+fi
+
+initqueue --unique --onetime --timeout /sbin/iscsiroot timeout "$netroot" "$NEWROOT"
 
 for nroot in $(getargs netroot); do
     [ "${nroot%%:*}" = "iscsi" ] || continue
