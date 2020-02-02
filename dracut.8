@@ -2,12 +2,12 @@
 .\"     Title: dracut
 .\"    Author: [see the "AUTHORS" section]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 07/31/2013
+.\"      Date: 08/20/2013
 .\"    Manual: dracut
 .\"    Source: dracut
 .\"  Language: English
 .\"
-.TH "DRACUT" "8" "07/31/2013" "dracut" "dracut"
+.TH "DRACUT" "8" "08/20/2013" "dracut" "dracut"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -396,6 +396,21 @@ only install kernel drivers and firmware files
 do not install kernel drivers and firmware files
 .RE
 .PP
+\fB\-\-early\-microcode\fR
+.RS 4
+Combine early microcode with ramdisk
+.RE
+.PP
+\fB\-\-no\-early\-microcode\fR
+.RS 4
+Do not combine early microcode with ramdisk
+.RE
+.PP
+\fB\-\-print\-cmdline\fR
+.RS 4
+print the kernel command line for the current disk layout
+.RE
+.PP
 \fB\-\-mdadmconf\fR
 .RS 4
 include local
@@ -565,6 +580,15 @@ If chrooted to another root other than the real root device, use "\-\-fstab" and
 \fB\-N, \-\-no\-hostonly\fR
 .RS 4
 Disable Host\-Only mode
+.RE
+.PP
+\fB\-\-persistent\-policy\fR\ \&\fI<policy>\fR
+.RS 4
+Use
+\fI<policy>\fR
+to address disks and partitions\&.
+\fI<policy>\fR
+can be any directory name found in /dev/disk\&. E\&.g\&. "by\-uuid", "by\-label"
 .RE
 .PP
 \fB\-\-fstab\fR

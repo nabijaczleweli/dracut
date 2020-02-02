@@ -2,12 +2,12 @@
 .\"     Title: dracut.conf
 .\"    Author: [see the "AUTHOR" section]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 07/31/2013
+.\"      Date: 08/20/2013
 .\"    Manual: dracut
 .\"    Source: dracut
 .\"  Language: English
 .\"
-.TH "DRACUT\&.CONF" "5" "07/31/2013" "dracut" "dracut"
+.TH "DRACUT\&.CONF" "5" "08/20/2013" "dracut" "dracut"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -103,6 +103,15 @@ Strip binaries in the initramfs (default=yes)
 Host\-Only mode: Install only what is needed for booting the local host instead of a generic host and generate host\-specific configuration\&.
 .RE
 .PP
+\fBpersistent_policy=\fR"\fI<policy>\fR"
+.RS 4
+Use
+\fI<policy>\fR
+to address disks and partitions\&.
+\fI<policy>\fR
+can be any directory name found in /dev/disk\&. E\&.g\&. "by\-uuid", "by\-label"
+.RE
+.PP
 \fBtmpdir=\fR"\fI<temporary directory>\fR"
 .RS 4
 Specify temporary directory to use\&.
@@ -171,8 +180,15 @@ Add a space\-separated list of fsck tools\&. If nothing is specified, the defaul
 .RS 4
 If specified, inhibit installation of any fsck tools\&.
 .RE
-.sp
-\fBro_mnt\fR Mount \fI/\fR and \fI/usr\fR read\-only by default\&.
+.PP
+\fBro_mnt=\fR"\fI{yes|no}\fR"
+.RS 4
+Mount
+\fI/\fR
+and
+\fI/usr\fR
+read\-only by default\&.
+.RE
 .PP
 \fBkernel_cmdline=\fR"\fIparameters\fR"
 .RS 4
@@ -187,6 +203,11 @@ Only install kernel drivers and firmware files\&. (default=no)
 \fBno_kernel=\fR"{yes|no}"
 .RS 4
 Do not install kernel drivers and firmware files (default=no)
+.RE
+.PP
+\fBearly_microcode=\fR"{yes|no}"
+.RS 4
+Combine early microcode with ramdisk (default=no)
 .RE
 .PP
 \fBstdloglvl\fR="\fI{0\-6}\fR"
