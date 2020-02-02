@@ -16,6 +16,14 @@ crypttab_contains() {
                     [ "$dev" -ef "$_dev" ] && return 0
                 done
             fi
+            if [ -e /usr/lib/dracut/modules.d/90crypt/block_uuid.map ]; then
+                # search for line starting with $d
+                _line=$(sed -n "\,^$d .*$,{p}" /usr/lib/dracut/modules.d/90crypt/block_uuid.map)
+                [ -z "$_line" ] && continue
+                # get second column with uuid
+                _uuid="$(echo $_line | sed 's,^.* \(.*$\),\1,')"
+	        strstr "$_uuid" "${luks##luks-}" && return 0
+            fi
         done < /etc/crypttab
     fi
     return 1
@@ -182,14 +190,19 @@ readkey() {
     local keydev="$2"
     local device="$3"
 
-    # This creates a unique single mountpoint for *, or several for explicitly
-    # given LUKS devices. It accomplishes unlocking multiple LUKS devices with
-    # a single password entry.
-    local mntp="/mnt/$(str_replace "keydev-$keydev-$keypath" '/' '-')"
+    # No mounting needed if the keyfile resides inside the initrd
+    if [ "/" == "$keydev" ]; then
+        local mntp=/
+    else
+        # This creates a unique single mountpoint for *, or several for explicitly
+        # given LUKS devices. It accomplishes unlocking multiple LUKS devices with
+        # a single password entry.
+        local mntp="/mnt/$(str_replace "keydev-$keydev-$keypath" '/' '-')"
 
-    if [ ! -d "$mntp" ]; then
-        mkdir "$mntp"
-        mount -r "$keydev" "$mntp" || die 'Mounting rem. dev. failed!'
+        if [ ! -d "$mntp" ]; then
+            mkdir "$mntp"
+            mount -r "$keydev" "$mntp" || die 'Mounting rem. dev. failed!'
+        fi
     fi
 
     case "${keypath##*.}" in
@@ -205,8 +218,7 @@ readkey() {
             if [ -f /lib/dracut-crypt-loop-lib.sh ]; then
                 . /lib/dracut-crypt-loop-lib.sh
                 loop_decrypt "$mntp" "$keypath" "$keydev" "$device"
-                initqueue --onetime --finished --unique --name "crypt-loop-cleanup-99-${mntp##*/}" \
-                    $(command -v umount) "$mntp; " $(command -v rmdir) "$mntp"
+                printf "%s\n" "umount \"$mntp\"; rmdir \"$mntp\";" > ${hookdir}/cleanup/"crypt-loop-cleanup-99-${mntp##*/}".sh
                 return 0
             else
                 die "No loop file support to decrypt '$keypath' on '$keydev'."
@@ -215,8 +227,11 @@ readkey() {
         *) cat "$mntp/$keypath" ;;
     esac
 
-    # General unmounting mechanism, modules doing custom cleanup should return earlier
-    # and install a pre-pivot cleanup hook
-    umount "$mntp"
-    rmdir "$mntp"
+    # No unmounting if the keyfile resides inside the initrd
+    if [ "/" != "$keydev" ]; then
+        # General unmounting mechanism, modules doing custom cleanup should return earlier
+        # and install a pre-pivot cleanup hook
+        umount "$mntp"
+        rmdir "$mntp"
+    fi
 }
