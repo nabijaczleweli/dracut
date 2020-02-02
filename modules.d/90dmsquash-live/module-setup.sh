@@ -5,7 +5,7 @@
 check() {
     # a live host-only image doesn't really make a lot of sense
     [[ $hostonly ]] && return 1
-    return 0
+    return 255
 }
 
 depends() {
@@ -16,7 +16,7 @@ depends() {
 }
 
 installkernel() {
-    instmods squashfs
+    instmods squashfs loop
 }
 
 install() {
@@ -35,7 +35,7 @@ install() {
     inst_hook pre-udev 30 "$moddir/dmsquash-live-genrules.sh"
     inst_hook pre-udev 30 "$moddir/dmsquash-liveiso-genrules.sh"
     inst_hook pre-pivot 20 "$moddir/apply-live-updates.sh"
-    inst "$moddir/dmsquash-live-root" "/sbin/dmsquash-live-root"
+    inst "$moddir/dmsquash-live-root.sh" "/sbin/dmsquash-live-root"
     # should probably just be generally included
     inst_rules 60-cdrom_id.rules
 }

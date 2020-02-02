@@ -10,14 +10,57 @@ depends() {
     return 0
 }
 
+
+echo_fs_helper() {
+    local dev=$1 fs=$2
+    case "$fs" in
+        xfs)
+            echo -n " xfs_db xfs_repair xfs_check "
+            ;;
+        ext?)
+            echo -n " e2fsck "
+            ;;
+        jfs)
+            echo -n " jfs_fsck "
+            ;;
+        reiserfs)
+            echo -n " reiserfsck "
+            ;;
+        btrfs)
+            echo -n " btrfsck "
+            ;;
+        *)
+            [[ -x fsck.$fs ]] && echo -n " fsck.$fs "
+            ;;
+    esac
+}
+
+
 install() {
-    dracut_install -o umount mount xfs_db xfs_check xfs_repair
-    dracut_install -o e2fsck
-    dracut_install -o jfs_fsck
-    dracut_install -o reiserfsck
-    dracut_install -o btrfsck
-    dracut_install -o /sbin/fsck*
+    local _helpers
 
     inst "$moddir/fs-lib.sh" "/lib/fs-lib.sh"
-    touch ${initdir}/etc/fstab.fslib
+    touch ${initdir}/etc/fstab.empty
+
+    [[ "$nofscks" = "yes" ]] && return
+
+    if [[ "$fscks" = "${fscks#*[^ ]*}" ]]; then
+        _helpers="\
+            umount mount /sbin/fsck*
+            xfs_db xfs_check xfs_repair
+            e2fsck jfs_fsck reiserfsck btrfsck
+        "
+        if [[ $hostonly ]]; then
+            _helpers="umount mount "
+            _helpers+=$(for_each_host_dev_fs echo_fs_helper)
+        fi
+    else
+        _helpers="$fscks"
+    fi
+
+    if strstr "$_helpers" e2fsck && [ -e /etc/e2fsck.conf ]; then
+        inst_simple /etc/e2fsck.conf
+    fi
+
+    dracut_install -o $_helpers
 }

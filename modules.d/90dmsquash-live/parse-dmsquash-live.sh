@@ -17,6 +17,8 @@ fi
 
 [ "${liveroot%%:*}" = "live" ] || return
 
+modprobe -q loop
+
 case "$liveroot" in
     live:LABEL=*|LABEL=*) \
         root="${root#live:}"
@@ -41,7 +43,9 @@ case "$liveroot" in
     live:/*.[Ii][Mm][Gg]|/*.[Ii][Mm][Gg])
         [ -f "${root#live:}" ] && rootok=1 ;;
 esac
-info "root was $root, liveroot is now $liveroot"
+info "root was $liveroot, is now $root"
 
 # make sure that init doesn't complain
 [ -z "$root" ] && root="live"
+
+wait_for_dev /dev/mapper/live-rw
