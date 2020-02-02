@@ -10,15 +10,15 @@
 [Unit]
 Description=Emergency Shell
 DefaultDependencies=no
+After=systemd-vconsole-setup.service
+Wants=systemd-vconsole-setup.service
 
 [Service]
 Environment=HOME=/
 WorkingDirectory=/
-ExecStartPre=-/bin/plymouth quit
-ExecStartPre=-/bin/echo -e '\n\nEntering emergency mode. Exit the shell to continue.\nType "journalctl" to view system logs.\n'
-ExecStart=-/bin/sh -i -l
-ExecStopPost=-/bin/rm -f /.console_lock
-Type=idle
+ExecStart=/bin/dracut-emergency
+ExecStopPost=-/usr/bin/systemctl --fail --no-block default
+Type=oneshot
 StandardInput=tty-force
 StandardOutput=inherit
 StandardError=inherit

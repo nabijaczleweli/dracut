@@ -19,17 +19,48 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
+export LC_MESSAGES=C
 
-[[ -d "$initdir/.kernelmodseen" ]] || mkdir -p "$initdir/.kernelmodseen"
+if [[ $DRACUT_KERNEL_LAZY ]] && ! [[ $DRACUT_KERNEL_LAZY_HASHDIR ]]; then
+    if ! [[ -d "$initdir/.kernelmodseen" ]]; then
+        mkdir -p "$initdir/.kernelmodseen"
+    fi
+    DRACUT_KERNEL_LAZY_HASHDIR="$initdir/.kernelmodseen"
+fi
+
+if [[ $initdir ]] && ! [[ -d $initdir ]]; then
+    mkdir -p "$initdir"
+fi
 
 # Generic substring function.  If $2 is in $1, return 0.
 strstr() { [[ $1 = *$2* ]]; }
+
+# find a binary.  If we were not passed the full path directly,
+# search in the usual places to find the binary.
+find_binary() {
+    if [[ -z ${1##/*} ]]; then
+        if [[ -x $1 ]] || { strstr "$1" ".so" && ldd $1 &>/dev/null; };  then
+            echo $1
+            return 0
+        fi
+    fi
+
+    type -P ${1##*/}
+}
 
 if ! [[ $dracutbasedir ]]; then
     dracutbasedir=${BASH_SOURCE[0]%/*}
     [[ $dracutbasedir = "dracut-functions" ]] && dracutbasedir="."
     [[ $dracutbasedir ]] || dracutbasedir="."
     dracutbasedir="$(readlink -f $dracutbasedir)"
+fi
+
+if ! [[ $DRACUT_INSTALL ]]; then
+    DRACUT_INSTALL=$(find_binary dracut-install)
+fi
+
+if ! [[ $DRACUT_INSTALL ]] && [[ -x $dracutbasedir/dracut-install ]]; then
+    DRACUT_INSTALL=$dracutbasedir/dracut-install
 fi
 
 # Detect lib paths
@@ -65,13 +96,26 @@ if ! type dinfo >/dev/null 2>&1; then
     dlog_init
 fi
 
+if ! [[ $initdir ]]; then
+    dfatal "initdir not set"
+    exit 1
+fi
+
 # export standard hookdirs
 [[ $hookdirs ]] || {
     hookdirs="cmdline pre-udev pre-trigger netroot "
     hookdirs+="initqueue initqueue/settled initqueue/online initqueue/finished initqueue/timeout "
     hookdirs+="pre-mount pre-pivot cleanup mount "
-    hookdirs+="emergency shutdown-emergency shutdown "
+    hookdirs+="emergency shutdown-emergency pre-shutdown shutdown "
     export hookdirs
+}
+
+dracut_need_initqueue() {
+    >"$initdir/lib/dracut/need-initqueue"
+}
+
+dracut_module_included() {
+    strstr "$mods_to_load $modules_loaded" "$@"
 }
 
 # Create all subdirectories for given path without creating the last element.
@@ -203,6 +247,21 @@ else
     }
 fi
 
+get_persistent_dev() {
+    local i _tmp _dev
+
+    _dev=$(udevadm info --query=name --name="$1" 2>/dev/null)
+    [ -z "$_dev" ] && return
+
+    for i in /dev/mapper/* /dev/disk/by-uuid/* /dev/disk/by-id/*; do
+        _tmp=$(udevadm info --query=name --name="$i" 2>/dev/null)
+        if [ "$_tmp" = "$_dev" ]; then
+            echo $i
+            return
+        fi
+    done
+}
+
 # get_fs_env <device>
 # Get and set the ID_FS_TYPE and ID_FS_UUID variable from udev for a device.
 # Example:
@@ -260,10 +319,17 @@ get_maj_min() {
 # $ find_block_device /usr
 # 8:4
 find_block_device() {
-    local _x _mpt _majmin _dev _fs _maj _min
+    local _x _mpt _majmin _dev _fs _maj _min _find_mpt
+    _find_mpt="$1"
     if [[ $use_fstab != yes ]]; then
-        while read _x _x _majmin _x _mpt _x _x _fs _dev _x; do
-            [[ $_mpt = $1 ]] || continue
+        while read _x; do
+            set -- $_x
+            _majmin="$3"
+            _mpt="$5"
+            [[ $8 = "-" ]] && shift
+            _fs="$8"
+            _dev="$9"
+            [[ $_mpt = $_find_mpt ]] || continue
             [[ $_fs = nfs ]] && { echo $_dev; return 0;}
             [[ $_fs = nfs3 ]] && { echo $_dev; return 0;}
             [[ $_fs = nfs4 ]] && { echo $_dev; return 0;}
@@ -281,7 +347,7 @@ find_block_device() {
     while read _dev _mpt _fs _x; do
         [ "${_dev%%#*}" != "$_dev" ] && continue
 
-        if [[ $_mpt = $1 ]]; then
+        if [[ $_mpt = $_find_mpt ]]; then
             [[ $_fs = nfs ]] && { echo $_dev; return 0;}
             [[ $_fs = nfs3 ]] && { echo $_dev; return 0;}
             [[ $_fs = nfs4 ]] && { echo $_dev; return 0;}
@@ -304,16 +370,75 @@ find_block_device() {
 # $ find_dev_fstype /dev/sda2;echo
 # ext4
 find_dev_fstype() {
-    local _x _mpt _majmin _dev _fs _maj _min
-    while read _x _x _majmin _x _mpt _x _x _fs _dev _x; do
-        [[ $_dev = $1 ]] || continue
+    local _x _mpt _majmin _dev _fs _maj _min _find_dev
+    _find_dev="$1"
+    strstr "$_find_dev" "/dev" || _find_dev="/dev/block/$_find_dev"
+    while read _x; do
+        set -- $_x
+        _majmin="$3"
+        _mpt="$5"
+        [[ $8 = "-" ]] && shift
+        _fs="$8"
+        _dev="$9"
+        strstr "$_dev" "/dev" || continue
+        [[ $_dev -ef $_find_dev ]] || continue
+        [[ $_fs = "autofs" ]] && continue
         echo -n $_fs;
         return 0;
     done < /proc/self/mountinfo
 
     # fall back to /etc/fstab
     while read _dev _mpt _fs _x; do
-        [[ $_dev = $1 ]] || continue
+        [ "${_dev%%#*}" != "$_dev" ] && continue
+        case "$_dev" in
+            LABEL=*)
+                _dev="$(echo $_dev | sed 's,/,\\x2f,g')"
+                _dev="/dev/disk/by-label/${_dev#LABEL=}"
+                ;;
+            UUID=*)
+                _dev="/dev/disk/by-uuid/${_dev#UUID=}"
+                ;;
+            PARTUUID=*)
+                _dev="/dev/disk/by-partuuid/${_dev#PARTUUID=}"
+                ;;
+        esac
+
+        [[ $_dev -ef $_find_dev ]] || continue
+        echo -n $_fs;
+        return 0;
+    done < /etc/fstab
+
+    return 1
+}
+
+# find_mp_fstype <mountpoint>
+# Echo the filesystem type for a given mountpoint.
+# /proc/self/mountinfo is taken as the primary source of information
+# and /etc/fstab is used as a fallback.
+# No newline is appended!
+# Example:
+# $ find_mp_fstype /;echo
+# ext4
+find_mp_fstype() {
+    local _x _mpt _majmin _dev _fs _maj _min _find_mpt
+    _find_mpt="$1"
+    while read _x; do
+        set -- $_x
+        _majmin="$3"
+        _mpt="$5"
+        [[ $8 = "-" ]] && shift
+        _fs="$8"
+        _dev="$9"
+        [[ $_mpt = $_find_mpt ]] || continue
+        [[ $_fs = "autofs" ]] && continue
+        echo -n $_fs;
+        return 0;
+    done < /proc/self/mountinfo
+
+    # fall back to /etc/fstab
+    while read _dev _mpt _fs _x; do
+        [ "${_dev%%#*}" != "$_dev" ] && continue
+        [[ $_mpt = $_find_mpt ]] || continue
         echo -n $_fs;
         return 0;
     done < /etc/fstab
@@ -325,25 +450,25 @@ find_dev_fstype() {
 find_root_block_device() { find_block_device /; }
 
 # for_each_host_dev_fs <func>
-# Execute "<func> <dev> <filesystem>" for every "<dev>|<fs>" pair found
+# Execute "<func> <dev> <filesystem>" for every "<dev> <fs>" pair found
 # in ${host_fs_types[@]}
 for_each_host_dev_fs()
 {
     local _func="$1"
     local _dev
-    local _fs
     local _ret=1
-    for f in ${host_fs_types[@]}; do
-        OLDIFS="$IFS"
-        IFS="|"
-        set -- $f
-        IFS="$OLDIFS"
-        _dev="$1"
-        [[ -b "$_dev" ]] || continue
-        _fs="$2"
-        $_func $_dev $_fs && _ret=0
+
+    [[ "${!host_fs_types[@]}" ]] || return 0
+
+    for _dev in "${!host_fs_types[@]}"; do
+        $_func "$_dev" "${host_fs_types[$_dev]}" && _ret=0
     done
     return $_ret
+}
+
+host_fs_all()
+{
+    echo "${host_fs_types[@]}"
 }
 
 # Walk all the slave relationships for a given block device.
@@ -362,6 +487,57 @@ check_block_and_slaves() {
     for _x in /sys/dev/block/$2/slaves/*/dev; do
         [[ -f $_x ]] || continue
         check_block_and_slaves $1 $(cat "$_x") && return 0
+    done
+    return 1
+}
+
+check_block_and_slaves_all() {
+    local _x _ret=1
+    [[ -b /dev/block/$2 ]] || return 1 # Not a block device? So sorry.
+    if "$1" $2; then
+          _ret=0
+    fi
+    check_vol_slaves "$@" && return 0
+    if [[ -f /sys/dev/block/$2/../dev ]]; then
+        check_block_and_slaves_all $1 $(cat "/sys/dev/block/$2/../dev") && _ret=0
+    fi
+    [[ -d /sys/dev/block/$2/slaves ]] || return 1
+    for _x in /sys/dev/block/$2/slaves/*/dev; do
+        [[ -f $_x ]] || continue
+        check_block_and_slaves_all $1 $(cat "$_x") && _ret=0
+    done
+    return $_ret
+}
+# for_each_host_dev_and_slaves <func>
+# Execute "<func> <dev>" for every "<dev>" found
+# in ${host_devs[@]} and their slaves
+for_each_host_dev_and_slaves_all()
+{
+    local _func="$1"
+    local _dev
+    local _ret=1
+
+    [[ "${host_devs[@]}" ]] || return 0
+
+    for _dev in ${host_devs[@]}; do
+        [[ -b "$_dev" ]] || continue
+        if check_block_and_slaves_all $_func $(get_maj_min $_dev); then
+               _ret=0
+        fi
+    done
+    return $_ret
+}
+
+for_each_host_dev_and_slaves()
+{
+    local _func="$1"
+    local _dev
+
+    [[ "${host_devs[@]}" ]] || return 0
+
+    for _dev in ${host_devs[@]}; do
+        [[ -b "$_dev" ]] || continue
+        check_block_and_slaves $_func $(get_maj_min $_dev) && return 0
     done
     return 1
 }
@@ -391,56 +567,79 @@ check_vol_slaves() {
     return 1
 }
 
-if [[ -x /usr/bin/dracut-install ]]; then
+# fs_get_option <filesystem options> <search for option>
+# search for a specific option in a bunch of filesystem options
+# and return the value
+fs_get_option() {
+    local _fsopts=$1
+    local _option=$2
+    local OLDIFS="$IFS"
+    IFS=,
+    set -- $_fsopts
+    IFS="$OLDIFS"
+    while [ $# -gt 0 ]; do
+        case $1 in
+            $_option=*)
+                echo ${1#${_option}=}
+                break
+        esac
+        shift
+    done
+}
+
+if [[ $DRACUT_INSTALL ]]; then
     [[ $DRACUT_RESOLVE_LAZY ]] || export DRACUT_RESOLVE_DEPS=1
     inst_dir() {
         [[ -e ${initdir}/"$1" ]] && return 0  # already there
-        dracut-install ${initdir+-D "$initdir"} -d "$@"
-        (($? != 0)) && derror dracut-install ${initdir+-D "$initdir"} -d "$@" || :
+        $DRACUT_INSTALL ${initdir+-D "$initdir"} -d "$@"
+        (($? != 0)) && derror $DRACUT_INSTALL ${initdir+-D "$initdir"} -d "$@" || :
     }
 
     inst() {
         [[ -e ${initdir}/"${2:-$1}" ]] && return 0  # already there
-        #dinfo "dracut-install -l $@"
-        dracut-install ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l} ${DRACUT_FIPS_MODE+-H} "$@"
-        (($? != 0)) && derror dracut-install ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l} ${DRACUT_FIPS_MODE+-H} "$@" || :
+        #dinfo "$DRACUT_INSTALL -l $@"
+        $DRACUT_INSTALL ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l} ${DRACUT_FIPS_MODE+-H} "$@"
+        (($? != 0)) && derror $DRACUT_INSTALL ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l} ${DRACUT_FIPS_MODE+-H} "$@" || :
     }
 
     inst_simple() {
         [[ -e ${initdir}/"${2:-$1}" ]] && return 0  # already there
         [[ -e $1 ]] || return 1  # no source
-        dracut-install ${initdir+-D "$initdir"} "$@"
-        (($? != 0)) && derror dracut-install ${initdir+-D "$initdir"} "$@" || :
+        $DRACUT_INSTALL ${initdir+-D "$initdir"} "$@"
+        (($? != 0)) && derror $DRACUT_INSTALL ${initdir+-D "$initdir"} "$@" || :
     }
 
     inst_symlink() {
         [[ -e ${initdir}/"${2:-$1}" ]] && return 0  # already there
         [[ -L $1 ]] || return 1
-        dracut-install ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@"
-        (($? != 0)) && derror dracut-install ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@" || :
+        $DRACUT_INSTALL ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@"
+        (($? != 0)) && derror $DRACUT_INSTALL ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@" || :
     }
 
     dracut_install() {
-        #dinfo "initdir=$initdir dracut-install -l $@"
-        dracut-install ${initdir+-D "$initdir"} -a ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@"
-        (($? != 0)) && derror dracut-install ${initdir+-D "$initdir"} -a ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@" || :
+        local ret
+        #dinfo "initdir=$initdir $DRACUT_INSTALL -l $@"
+        $DRACUT_INSTALL ${initdir+-D "$initdir"} -a ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@"
+        ret=$?
+        (($ret != 0)) && derror $DRACUT_INSTALL ${initdir+-D "$initdir"} -a ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@" || :
+        return $ret
     }
 
     inst_library() {
         [[ -e ${initdir}/"${2:-$1}" ]] && return 0  # already there
         [[ -e $1 ]] || return 1  # no source
-        dracut-install ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@"
-        (($? != 0)) && derror dracut-install ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@" || :
+        $DRACUT_INSTALL ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@"
+        (($? != 0)) && derror $DRACUT_INSTALL ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@" || :
     }
 
     inst_binary() {
-        dracut-install ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@"
-        (($? != 0)) && derror dracut-install ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@" || :
+        $DRACUT_INSTALL ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@"
+        (($? != 0)) && derror $DRACUT_INSTALL ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@" || :
     }
 
     inst_script() {
-        dracut-install ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@"
-        (($? != 0)) && derror dracut-install ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@" || :
+        $DRACUT_INSTALL ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@"
+        (($? != 0)) && derror $DRACUT_INSTALL ${initdir+-D "$initdir"} ${DRACUT_RESOLVE_DEPS+-l}  ${DRACUT_FIPS_MODE+-H} "$@" || :
     }
 
 else
@@ -493,6 +692,12 @@ else
             if [[ -e "${_src%/*}/.${_src##*/}.hmac" ]]; then
                 inst "${_src%/*}/.${_src##*/}.hmac" "${_target%/*}/.${_target##*/}.hmac"
             fi
+            if [[ -e "/lib/fipscheck/${_src##*/}.hmac" ]]; then
+                inst "/lib/fipscheck/${_src##*/}.hmac" "/lib/fipscheck/${_target##*/}.hmac"
+            fi
+            if [[ -e "/lib64/fipscheck/${_src##*/}.hmac" ]]; then
+                inst "/lib64/fipscheck/${_src##*/}.hmac" "/lib64/fipscheck/${_target##*/}.hmac"
+            fi
         fi
         ddebug "Installing $_src"
         cp --reflink=auto --sparse=auto -pfL "$_src" "${initdir}/$_target"
@@ -529,6 +734,12 @@ else
                 # install checksum files also
                 if [[ -e "${_src%/*}/.${_src##*/}.hmac" ]]; then
                     inst "${_src%/*}/.${_src##*/}.hmac" "${_dest%/*}/.${_dest##*/}.hmac"
+                fi
+                if [[ -e "/lib/fipscheck/${_src##*/}.hmac" ]]; then
+                    inst "/lib/fipscheck/${_src##*/}.hmac" "/lib/fipscheck/${_dest##*/}.hmac"
+                fi
+                if [[ -e "/lib64/fipscheck/${_src##*/}.hmac" ]]; then
+                    inst "/lib64/fipscheck/${_src##*/}.hmac" "/lib64/fipscheck/${_dest##*/}.hmac"
                 fi
             fi
             _reallib=$(readlink -f "$_src")
@@ -664,67 +875,80 @@ rev_lib_symlinks() {
     echo "${links}"
 }
 
-# find a binary.  If we were not passed the full path directly,
-# search in the usual places to find the binary.
-find_binary() {
-    if [[ -z ${1##/*} ]]; then
-        if [[ -x $1 ]] || { strstr "$1" ".so" && ldd $1 &>/dev/null; };  then
-            echo $1
-            return 0
-        fi
-    fi
-
-    type -P $1
-}
-
 # attempt to install any programs specified in a udev rule
 inst_rule_programs() {
     local _prog _bin
 
     if grep -qE 'PROGRAM==?"[^ "]+' "$1"; then
         for _prog in $(grep -E 'PROGRAM==?"[^ "]+' "$1" | sed -r 's/.*PROGRAM==?"([^ "]+).*/\1/'); do
+            _bin=""
             if [ -x ${udevdir}/$_prog ]; then
                 _bin=${udevdir}/$_prog
-            else
+            elif [[ "${_prog/\$env\{/}" == "$_prog" ]]; then
                 _bin=$(find_binary "$_prog") || {
-                    dinfo "Skipping program $_prog using in udev rule $(basename $1) as it cannot be found"
+                    dinfo "Skipping program $_prog using in udev rule ${1##*/} as it cannot be found"
                     continue;
                 }
             fi
 
-            #dinfo "Installing $_bin due to it's use in the udev rule $(basename $1)"
-            dracut_install "$_bin"
+            [[ $_bin ]] && dracut_install "$_bin"
         done
     fi
-    if grep -qE 'RUN==?"[^ "]+' "$1"; then
-        for _prog in $(grep -E 'RUN==?"[^ "]+' "$1" | sed -r 's/.*RUN==?"([^ "]+).*/\1/'); do
+    if grep -qE 'RUN[+=]=?"[^ "]+' "$1"; then
+        for _prog in $(grep -E 'RUN[+=]=?"[^ "]+' "$1" | sed -r 's/.*RUN[+=]=?"([^ "]+).*/\1/'); do
+            _bin=""
             if [ -x ${udevdir}/$_prog ]; then
                 _bin=${udevdir}/$_prog
-            else
+            elif [[ "${_prog/\$env\{/}" == "$_prog" ]] && [[ "${_prog}" != "/sbin/initqueue" ]]; then
                 _bin=$(find_binary "$_prog") || {
-                    dinfo "Skipping program $_prog using in udev rule $(basename $1) as it cannot be found"
+                    dinfo "Skipping program $_prog using in udev rule ${1##*/} as it cannot be found"
                     continue;
                 }
             fi
 
-            #dinfo "Installing $_bin due to it's use in the udev rule $(basename $1)"
-            dracut_install "$_bin"
+            [[ $_bin ]] && dracut_install "$_bin"
         done
     fi
-    if grep -qE 'PROGRAM==?"[^ "]+' "$1"; then
-        for _prog in $(grep -E 'IMPORT==?"[^ "]+' "$1" | sed -r 's/.*IMPORT==?"([^ "]+).*/\1/'); do
+    if grep -qE 'IMPORT\{program\}==?"[^ "]+' "$1"; then
+        for _prog in $(grep -E 'IMPORT\{program\}==?"[^ "]+' "$1" | sed -r 's/.*IMPORT\{program\}==?"([^ "]+).*/\1/'); do
+            _bin=""
             if [ -x ${udevdir}/$_prog ]; then
                 _bin=${udevdir}/$_prog
-            else
+            elif [[ "${_prog/\$env\{/}" == "$_prog" ]]; then
                 _bin=$(find_binary "$_prog") || {
-                    dinfo "Skipping program $_prog using in udev rule $(basename $1) as it cannot be found"
+                    dinfo "Skipping program $_prog using in udev rule ${1##*/} as it cannot be found"
                     continue;
                 }
             fi
 
-            #dinfo "Installing $_bin due to it's use in the udev rule $(basename $1)"
-            dracut_install "$_bin"
+            [[ $_bin ]] && dracut_install "$_bin"
         done
+    fi
+}
+
+# attempt to install any programs specified in a udev rule
+inst_rule_group_owner() {
+    local i
+
+    if grep -qE 'OWNER=?"[^ "]+' "$1"; then
+        for i in $(grep -E 'OWNER=?"[^ "]+' "$1" | sed -r 's/.*OWNER=?"([^ "]+).*/\1/'); do
+            if ! egrep -q "^$i:" "$initdir/etc/passwd" 2>/dev/null; then
+                egrep "^$i:" /etc/passwd 2>/dev/null >> "$initdir/etc/passwd"
+            fi
+        done
+    fi
+    if grep -qE 'GROUP=?"[^ "]+' "$1"; then
+        for i in $(grep -E 'GROUP=?"[^ "]+' "$1" | sed -r 's/.*GROUP=?"([^ "]+).*/\1/'); do
+            if ! egrep -q "^$i:" "$initdir/etc/group" 2>/dev/null; then
+                egrep "^$i:" /etc/group 2>/dev/null >> "$initdir/etc/group"
+            fi
+        done
+    fi
+}
+
+inst_rule_initqueue() {
+    if grep -q -F initqueue "$1"; then
+        dracut_need_initqueue
     fi
 }
 
@@ -736,11 +960,13 @@ inst_rules() {
     inst_dir "${udevdir}/rules.d"
     inst_dir "$_target"
     for _rule in "$@"; do
-        if [ "${rule#/}" = "$rule" ]; then
+        if [ "${_rule#/}" = "$_rule" ]; then
             for r in ${udevdir}/rules.d /etc/udev/rules.d; do
                 if [[ -f $r/$_rule ]]; then
                     _found="$r/$_rule"
                     inst_rule_programs "$_found"
+                    inst_rule_group_owner "$_found"
+                    inst_rule_initqueue "$_found"
                     inst_simple "$_found"
                 fi
             done
@@ -749,10 +975,39 @@ inst_rules() {
             if [[ -f ${r}$_rule ]]; then
                 _found="${r}$_rule"
                 inst_rule_programs "$_found"
+                inst_rule_group_owner "$_found"
+                inst_rule_initqueue "$_found"
                 inst_simple "$_found" "$_target/${_found##*/}"
             fi
         done
         [[ $_found ]] || dinfo "Skipping udev rule: $_rule"
+    done
+}
+
+prepare_udev_rules() {
+    [ -z "$UDEVVERSION" ] && export UDEVVERSION=$(udevadm --version)
+
+    for f in "$@"; do
+        f="${initdir}/etc/udev/rules.d/$f"
+        [ -e "$f" ] || continue
+        while read line; do
+            if [ "${line%%IMPORT PATH_ID}" != "$line" ]; then
+                if [ $UDEVVERSION -ge 174 ]; then
+                    printf '%sIMPORT{builtin}="path_id"\n' "${line%%IMPORT PATH_ID}"
+                else
+                    printf '%sIMPORT{program}="path_id %%p"\n' "${line%%IMPORT PATH_ID}"
+                fi
+            elif [ "${line%%IMPORT BLKID}" != "$line" ]; then
+                if [ $UDEVVERSION -ge 176 ]; then
+                    printf '%sIMPORT{builtin}="blkid"\n' "${line%%IMPORT BLKID}"
+                else
+                    printf '%sIMPORT{program}="/sbin/blkid -o udev -p $tempnode"\n' "${line%%IMPORT BLKID}"
+                fi
+            else
+                echo "$line"
+            fi
+        done < "${f}" > "${f}.new"
+        mv "${f}.new" "$f"
     done
 }
 
@@ -768,7 +1023,7 @@ inst_hook() {
         dfatal "No such hook type $1. Aborting initrd creation."
         exit 1
     fi
-    inst_simple "$3" "/lib/dracut/hooks/${1}/${2}${3##*/}"
+    inst_simple "$3" "/lib/dracut/hooks/${1}/${2}-${3##*/}"
 }
 
 # install any of listed files
@@ -840,7 +1095,7 @@ inst_decompress() {
     for _src in $@
     do
         case ${_src} in
-            *.gz) _cmd='gzip -d' ;;
+            *.gz) _cmd='gzip -f -d' ;;
             *.bz2) _cmd='bzip2 -d' ;;
             *) return 1 ;;
         esac
@@ -992,6 +1247,9 @@ check_mount() {
     local _moddir=$(echo ${dracutbasedir}/modules.d/??${1})
     local _ret
     local _moddep
+
+    [ "${#host_fs_types[*]}" -le 0 ] && return 1
+
     # If we are already scheduled to be loaded, no need to check again.
     strstr " $mods_to_load " " $_mod " && return 0
     strstr " $mods_checked_as_dep " " $_mod " && return 1
@@ -1001,14 +1259,27 @@ check_mount() {
 
     [[ $2 ]] || mods_checked_as_dep+=" $_mod "
 
-    strstr " $omit_dracutmodules " " $_mod " && return 1
-
-    if [ "${#host_fs_types[*]}" -gt 0 ]; then
-        module_check_mount $_mod || return 1
-    else
-        # skip this module
+    if strstr " $omit_dracutmodules " " $_mod "; then
+        dinfo "dracut module '$_mod' will not be installed, because it's in the list to be omitted!"
         return 1
     fi
+
+    if strstr " $dracutmodules $add_dracutmodules $force_add_dracutmodules" " $_mod "; then
+        module_check_mount $_mod; ret=$?
+
+        # explicit module, so also accept ret=255
+        [[ $ret = 0 || $ret = 255 ]] || return 1
+    else
+        # module not in our list
+        if [[ $dracutmodules = all ]]; then
+            # check, if we can and should install this module
+            module_check_mount $_mod || return 1
+        else
+            # skip this module
+            return 1
+        fi
+    fi
+
 
     for _moddep in $(module_depends $_mod); do
         # handle deps as if they were manually added
@@ -1017,7 +1288,10 @@ check_mount() {
         strstr " $force_add_dracutmodules " " $_moddep " || \
             force_add_dracutmodules+=" $_moddep "
         # if a module we depend on fail, fail also
-        check_module $_moddep || return 1
+        if ! check_module $_moddep; then
+            derror "dracut module '$_mod' depends on '$_moddep', which can't be installed"
+            return 1
+        fi
     done
 
     strstr " $mods_to_load " " $_mod " || \
@@ -1044,7 +1318,10 @@ check_module() {
 
     [[ $2 ]] || mods_checked_as_dep+=" $_mod "
 
-    strstr " $omit_dracutmodules " " $_mod " && return 1
+    if strstr " $omit_dracutmodules " " $_mod "; then
+        dinfo "dracut module '$_mod' will not be installed, because it's in the list to be omitted!"
+        return 1
+    fi
 
     if strstr " $dracutmodules $add_dracutmodules $force_add_dracutmodules" " $_mod "; then
         if strstr " $force_add_dracutmodules" " $_mod"; then
@@ -1072,7 +1349,10 @@ check_module() {
         strstr " $force_add_dracutmodules " " $_moddep " || \
             force_add_dracutmodules+=" $_moddep "
         # if a module we depend on fail, fail also
-        check_module $_moddep || return 1
+        if ! check_module $_moddep; then
+            derror "dracut module '$_mod' depends on '$_moddep', which can't be installed"
+            return 1
+        fi
     done
 
     strstr " $mods_to_load " " $_mod " || \
@@ -1100,7 +1380,7 @@ for_each_module_dir() {
     for _mod in $_modcheck; do
         strstr "$mods_to_load" "$_mod" && continue
         strstr "$omit_dracutmodules" "$_mod" && continue
-        derror "Dracut module \"$_mod\" cannot be found or installed."
+        derror "dracut module '$_mod' cannot be found or installed."
     done
 }
 
@@ -1112,8 +1392,8 @@ install_kmod_with_fw() {
     [[ -e "${initdir}/lib/modules/$kernel/${1##*/lib/modules/$kernel/}" ]] \
         && return 0
 
-    if [[ -e "$initdir/.kernelmodseen/${1##*/}" ]]; then
-        read ret < "$initdir/.kernelmodseen/${1##*/}"
+    if [[ $DRACUT_KERNEL_LAZY_HASHDIR ]] && [[ -e "$DRACUT_KERNEL_LAZY_HASHDIR/${1##*/}" ]]; then
+        read ret < "$DRACUT_KERNEL_LAZY_HASHDIR/${1##*/}"
         return $ret
     fi
 
@@ -1133,8 +1413,9 @@ install_kmod_with_fw() {
 
     inst_simple "$1" "/lib/modules/$kernel/${1##*/lib/modules/$kernel/}"
     ret=$?
-    [ -d "$initdir/.kernelmodseen" ] && \
-        echo $ret > "$initdir/.kernelmodseen/${1##*/}"
+    [[ $DRACUT_KERNEL_LAZY_HASHDIR ]] && \
+        [[ -d "$DRACUT_KERNEL_LAZY_HASHDIR" ]] && \
+        echo $ret > "$DRACUT_KERNEL_LAZY_HASHDIR/${1##*/}"
     (($ret != 0)) && return $ret
 
     local _modname=${1##*/} _fwdir _found _fw
@@ -1181,38 +1462,38 @@ for_each_kmod_dep() {
 dracut_kernel_post() {
     local _moddirname=${srcmods%%/lib/modules/*}
 
-    if [[ -f "$initdir/.kernelmodseen/lazylist" ]]; then
-        xargs modprobe -a ${_moddirname+-d ${_moddirname}/} --ignore-install --show-depends \
-            < "$initdir/.kernelmodseen/lazylist" 2>/dev/null \
+    if [[ $DRACUT_KERNEL_LAZY_HASHDIR ]] && [[ -f "$DRACUT_KERNEL_LAZY_HASHDIR/lazylist" ]]; then
+        xargs -r modprobe -a ${_moddirname+-d ${_moddirname}/} \
+            --ignore-install --show-depends --set-version $kernel \
+            < "$DRACUT_KERNEL_LAZY_HASHDIR/lazylist" 2>/dev/null \
             | sort -u \
             | while read _cmd _modpath _options; do
             [[ $_cmd = insmod ]] || continue
             echo "$_modpath"
-        done > "$initdir/.kernelmodseen/lazylist.dep"
+        done > "$DRACUT_KERNEL_LAZY_HASHDIR/lazylist.dep"
 
         (
-            if [[ -x /usr/bin/dracut-install ]] && [[ -z $_moddirname ]]; then
-                xargs dracut-install ${initdir+-D "$initdir"} -a < "$initdir/.kernelmodseen/lazylist.dep"
+            if [[ $DRACUT_INSTALL ]] && [[ -z $_moddirname ]]; then
+                xargs -r $DRACUT_INSTALL ${initdir+-D "$initdir"} -a < "$DRACUT_KERNEL_LAZY_HASHDIR/lazylist.dep"
             else
                 while read _modpath; do
                     local _destpath=$_modpath
                     [[ $_moddirname ]] && _destpath=${_destpath##$_moddirname/}
                     _destpath=${_destpath##*/lib/modules/$kernel/}
                     inst_simple "$_modpath" "/lib/modules/$kernel/${_destpath}" || exit $?
-                done < "$initdir/.kernelmodseen/lazylist.dep"
+                done < "$DRACUT_KERNEL_LAZY_HASHDIR/lazylist.dep"
             fi
         ) &
 
-
-        if [[ -x /usr/bin/dracut-install ]]; then
-            xargs modinfo -k $kernel -F firmware < "$initdir/.kernelmodseen/lazylist.dep" \
+        if [[ $DRACUT_INSTALL ]]; then
+            xargs -r modinfo -k $kernel -F firmware < "$DRACUT_KERNEL_LAZY_HASHDIR/lazylist.dep" \
                 | while read line; do
                 for _fwdir in $fw_dir; do
                     echo $_fwdir/$line;
                 done;
-            done |xargs dracut-install ${initdir+-D "$initdir"} -a -o
+            done | xargs -r $DRACUT_INSTALL ${initdir+-D "$initdir"} -a -o
         else
-            for _fw in $(xargs modinfo -k $kernel -F firmware < "$initdir/.kernelmodseen/lazylist.dep"); do
+            for _fw in $(xargs -r modinfo -k $kernel -F firmware < "$DRACUT_KERNEL_LAZY_HASHDIR/lazylist.dep"); do
                 for _fwdir in $fw_dir; do
                     if [[ -d $_fwdir && -f $_fwdir/$_fw ]]; then
                         inst_simple "$_fwdir/$_fw" "/lib/firmware/$_fw"
@@ -1243,23 +1524,40 @@ dracut_kernel_post() {
         exit 1
     fi
 
-    rm -fr "$initdir/.kernelmodseen"
+    [[ $DRACUT_KERNEL_LAZY_HASHDIR ]] && rm -fr "$DRACUT_KERNEL_LAZY_HASHDIR"
 }
+
+module_is_host_only() (
+    local _mod=$1
+    _mod=${_mod##*/}
+    _mod=${_mod%.ko}
+
+    [[ "$add_drivers" =~ " ${_mod} " ]] && return 0
+
+    # check if module is loaded
+    [[ -d $(echo /sys/module/${_mod//-/_}|{ read a b; echo $a; }) ]] && return 0
+
+    # check if module is loadable on the current kernel
+    # this covers the case, where a new module is introduced
+    # or a module was renamed
+    # or a module changed from builtin to a module
+    modinfo -F filename "$_mod" &>/dev/null || return 0
+
+    return 1
+)
 
 find_kernel_modules_by_path () (
     local _OLDIFS
-    if ! [[ $hostonly ]]; then
-        _OLDIFS=$IFS
-        IFS=:
-        while read a rest; do
-            [[ $a = kernel*/$1/* ]] || continue
-            echo $srcmods/$a
-        done < $srcmods/modules.dep
-        IFS=$_OLDIFS
-    else
-        ( cd /sys/module; echo *; ) \
-        | xargs modinfo -F filename -k $kernel 2>/dev/null
-    fi
+
+    [[ -f $srcmods/modules.dep ]] || return 0
+
+    _OLDIFS=$IFS
+    IFS=:
+    while read a rest; do
+        [[ $a = */$1/* ]] || continue
+        echo $srcmods/$a
+    done < $srcmods/modules.dep
+    IFS=$_OLDIFS
     return 0
 )
 
@@ -1267,8 +1565,8 @@ find_kernel_modules () {
     find_kernel_modules_by_path  drivers
 }
 
-# instmods [-c] <kernel module> [<kernel module> ... ]
-# instmods [-c] <kernel subsystem>
+# instmods [-c [-s]] <kernel module> [<kernel module> ... ]
+# instmods [-c [-s]] <kernel subsystem>
 # install kernel modules along with all their dependencies.
 # <kernel subsystem> can be e.g. "=block" or "=drivers/usb/storage"
 instmods() {
@@ -1276,8 +1574,14 @@ instmods() {
     # called [sub]functions inherit _fderr
     local _fderr=9
     local _check=no
+    local _silent=no
     if [[ $1 = '-c' ]]; then
         _check=yes
+        shift
+    fi
+
+    if [[ $1 = '-s' ]]; then
+        _silent=yes
         shift
     fi
 
@@ -1291,13 +1595,13 @@ instmods() {
                 ((_ret+=$?))
                 ;;
             --*) _mpargs+=" $_mod" ;;
-            i2o_scsi) return 0;; # Do not load this diagnostic-only module
             *)
                 _mod=${_mod##*/}
                 # if we are already installed, skip this module and go on
                 # to the next one.
-                if [[ -f "$initdir/.kernelmodseen/${_mod%.ko}.ko" ]]; then
-                    read _ret <"$initdir/.kernelmodseen/${_mod%.ko}.ko"
+                if [[ $DRACUT_KERNEL_LAZY_HASHDIR ]] && \
+                    [[ -f "$DRACUT_KERNEL_LAZY_HASHDIR/${_mod%.ko}.ko" ]]; then
+                    read _ret <"$DRACUT_KERNEL_LAZY_HASHDIR/${_mod%.ko}.ko"
                     return $_ret
                 fi
 
@@ -1305,16 +1609,16 @@ instmods() {
                     dinfo "Omitting driver ${_mod##$srcmods}"
                     return 0
                 fi
+
                 # If we are building a host-specific initramfs and this
                 # module is not already loaded, move on to the next one.
                 [[ $hostonly ]] \
-                    && ! [[ -d $(echo /sys/module/${_mod//-/_}|{ read a b; echo $a; }) ]] \
-                    && ! [[ "$add_drivers" =~ " ${_mod} " ]] \
+                    && ! module_is_host_only "$_mod" \
                     && return 0
 
-                if [[ "$_check" = "yes" ]] || ! [[ $DRACUT_KERNEL_LAZY ]]; then
+                if [[ "$_check" = "yes" ]] || ! [[ $DRACUT_KERNEL_LAZY_HASHDIR ]]; then
                     # We use '-d' option in modprobe only if modules prefix path
-                    # differs from default '/'.  This allows us to use Dracut with
+                    # differs from default '/'.  This allows us to use dracut with
                     # old version of modprobe which doesn't have '-d' option.
                     local _moddirname=${srcmods%%/lib/modules/*}
                     [[ -n ${_moddirname} ]] && _moddirname="-d ${_moddirname}/"
@@ -1325,7 +1629,8 @@ instmods() {
                         --set-version $kernel ${_moddirname} $_mpargs
                     ((_ret+=$?))
                 else
-                    echo $_mod >> "$initdir/.kernelmodseen/lazylist"
+                    [[ $DRACUT_KERNEL_LAZY_HASHDIR ]] && \
+                        echo $_mod >> "$DRACUT_KERNEL_LAZY_HASHDIR/lazylist"
                 fi
                 ;;
         esac
@@ -1337,8 +1642,8 @@ instmods() {
         if (($# == 0)); then  # filenames from stdin
             while read _mod; do
                 inst1mod "${_mod%.ko*}" || {
-                    if [ "$_check" = "yes" ]; then
-                        dfatal "Failed to install $_mod"
+                    if [[ "$_check" == "yes" ]]; then
+                        [[ "$_silent" == "no" ]] && dfatal "Failed to install $_mod"
                         return 1
                     fi
                 }
@@ -1346,8 +1651,8 @@ instmods() {
         fi
         while (($# > 0)); do  # filenames as arguments
             inst1mod ${1%.ko*} || {
-                if [ "$_check" = "yes" ]; then
-                    dfatal "Failed to install $1"
+                if [[ "$_check" == "yes" ]]; then
+                    [[ "$_silent" == "no" ]] && dfatal "Failed to install $1"
                     return 1
                 fi
             }

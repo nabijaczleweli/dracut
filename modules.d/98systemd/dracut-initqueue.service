@@ -8,21 +8,24 @@
 # See systemd.special(7) for details
 
 [Unit]
-Description=Dracut initqueue hook
+Description=dracut initqueue hook
+Documentation=man:dracut-initqueue.service(8)
 DefaultDependencies=no
 After=systemd-udev-trigger.service
 Wants=systemd-udev-trigger.service
 ConditionPathExists=/etc/initrd-release
+ConditionPathExists=|/lib/dracut/need-initqueue
+ConditionPathExistsGlob=|/lib/dracut/hooks/initqueue/*.sh
+ConditionKernelCommandLine=|rd.break=pre-mount
 
 [Service]
-Environment=HOME=/
-WorkingDirectory=/
+Type=oneshot
 ExecStart=-/bin/dracut-initqueue
-Type=simple
 StandardInput=null
 StandardOutput=syslog
 StandardError=syslog+console
 KillMode=process
+RemainAfterExit=yes
 
 # Bash ignores SIGTERM, so we send SIGHUP instead, to ensure that bash
 # terminates cleanly.

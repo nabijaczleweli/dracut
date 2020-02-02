@@ -32,15 +32,17 @@ fsck_tail() {
 # note: this function sets _drv of the caller
 fsck_able() {
     case "$1" in
-        xfs) {
-                type xfs_db &&
-                type xfs_repair &&
-                type xfs_check &&
-                type mount &&
-                type umount
-            } >/dev/null 2>&1 &&
-            _drv="_drv=none fsck_drv_xfs" &&
-            return 0
+        xfs)
+            # {
+            #     type xfs_db &&
+            #     type xfs_repair &&
+            #     type xfs_check &&
+            #     type mount &&
+            #     type umount
+            # } >/dev/null 2>&1 &&
+            # _drv="_drv=none fsck_drv_xfs" &&
+            # return 0
+            return 1
             ;;
         ext?)
             type e2fsck >/dev/null 2>&1 &&
@@ -58,9 +60,10 @@ fsck_able() {
             return 0
             ;;
         btrfs)
-            type btrfsck >/dev/null 2>&1 &&
-            _drv="_drv=none fsck_drv_btrfs" &&
-            return 0
+            # type btrfsck >/dev/null 2>&1 &&
+            # _drv="_drv=none fsck_drv_btrfs" &&
+            # return 0
+            return 1
             ;;
         nfs*)
             # nfs can be a nop, returning success
@@ -88,7 +91,6 @@ fsck_drv_btrfs() {
     # btrfs fsck is not necessary... Either it mounts or not
     return 0
 }
-
 
 # common code for checkers that follow usual subset of options and return codes
 fsck_drv_com() {
@@ -198,4 +200,51 @@ det_fs() {
         _fs="$_orig"
     fi
     echo "$_fs"
+}
+
+write_fs_tab() {
+    local _o
+    local _rw
+    local _root
+    local _rootfstype
+    local _rootflags
+    local _fspassno
+
+    _fspassno="0"
+    _root="$1"
+    _rootfstype="$2"
+    _rootflags="$3"
+    [ -z "$_rootfstype" ] && _rootfstype=$(getarg rootfstype=)
+    [ -z "$_rootflags" ] && _rootflags=$(getarg rootflags=)
+
+    [ -z "$_rootfstype" ] && _rootfstype="auto"
+
+    if [ -z "$_rootflags" ]; then
+        _rootflags="ro,x-initrd-rootfs.mount"
+    else
+        _rootflags="ro,$_rootflags,x-initrd-rootfs.mount"
+    fi
+
+    _rw=0
+    for _o in $CMDLINE; do
+        case $_o in
+            rw)
+                _rw=1;;
+            ro)
+                _rw=0;;
+        esac
+    done
+    if [ "$_rw" = "1" ]; then
+        _rootflags="$_rootflags,rw"
+        if ! getargbool 0 rd.skipfsck; then
+            _fspassno="1"
+        fi
+    fi
+
+    echo "$_root /sysroot $_rootfstype $_rootflags $_fspassno 0" >> /etc/fstab
+
+    if type systemctl >/dev/null 2>/dev/null; then
+        systemctl daemon-reload
+        systemctl --no-block start initrd-root-fs.target
+    fi
 }

@@ -5,12 +5,26 @@
 check() {
     [[ $hostonly ]] || [[ $mount_needs ]] && {
         for fs in ${host_fs_types[@]}; do
-            strstr "$fs" "\|9p" && return 0
+            [[ "$fs" == "9p" ]] && return 0
         done
-        return 1
+        return 255
     }
 
-    return 0
+    if type -P systemd-detect-virt >/dev/null 2>&1; then
+        vm=$(systemd-detect-virt --vm >/dev/null 2>&1)
+        (($? != 0)) && return 255
+        [[ $vm = "qemu" ]] && return 0
+        [[ $vm = "kvm" ]] && return 0
+        [[ $vm = "bochs" ]] && return 0
+    fi
+
+    for i in /sys/class/dmi/id/*_vendor; do
+        [[ -f $i ]] || continue
+        read vendor < $i
+        [[  "$vendor" == "QEMU" ]] && return 0
+        [[  "$vendor" == "Bochs" ]] && return 0
+    done
+    return 255
 }
 
 depends() {
@@ -18,7 +32,7 @@ depends() {
 }
 
 installkernel() {
-    instmods 9p 9pnet_virtio
+    instmods 9p 9pnet_virtio virtio_pci
 }
 
 install() {

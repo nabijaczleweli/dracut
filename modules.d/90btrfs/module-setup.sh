@@ -9,12 +9,10 @@ check() {
     type -P btrfs >/dev/null || return 1
 
     [[ $hostonly ]] || [[ $mount_needs ]] && {
-        local _found
         for fs in ${host_fs_types[@]}; do
-            strstr "$fs" "\|btrfs" && _found="1"
+            [[ "$fs" == "btrfs" ]] && return 0
         done
-        [[ $_found ]] || return 1
-        unset _found
+        return 255
     }
 
     return 0
@@ -26,13 +24,26 @@ depends() {
 }
 
 installkernel() {
-    instmods btrfs crc32c
+    instmods btrfs
 }
 
 install() {
-    inst_rules "$moddir/80-btrfs.rules"
-    inst_script "$moddir/btrfs_finished.sh" /sbin/btrfs_finished
-    inst_script "$moddir/btrfs_timeout.sh" /sbin/btrfs_timeout
-    dracut_install btrfs btrfsck
+    if ! inst_rules 64-btrfs.rules; then
+        inst_rules "$moddir/80-btrfs.rules"
+        case "$(btrfs --help)" in
+            *device\ ready*)
+                inst_script "$moddir/btrfs_device_ready.sh" /sbin/btrfs_finished ;;
+            *)
+                inst_script "$moddir/btrfs_finished.sh" /sbin/btrfs_finished ;;
+        esac
+    fi
+
+    if ! dracut_module_included "systemd"; then
+        inst_script "$moddir/btrfs_timeout.sh" \
+            /usr/lib/dracut/hooks/initqueue/timeout/btrfs_timeout.sh
+    fi
+
+    dracut_install btrfsck
+    inst $(command -v btrfs) /sbin/btrfs
 }
 
