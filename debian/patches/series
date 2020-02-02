@@ -1,0 +1,8 @@
+crc32
+systemd-udev
+pkg-config
+plymouth
+multipath
+libdir
+initramfs-restore
+dev-shm-mount
