@@ -1,12 +1,11 @@
 #!/bin/bash
-# -*- mode: shell-script; indent-tabs-mode: nil; sh-basic-offset: 4; -*-
-# ex: ts=8 sw=4 sts=4 et filetype=sh
+
 TEST_DESCRIPTION="root filesystem on NBD"
 
 KVERSION=${KVERSION-$(uname -r)}
 
 # Uncomment this to debug failures
-#DEBUGFAIL="rd.shell rd.retry=10 rd.break"
+#DEBUGFAIL="rd.shell rd.break"
 #SERIAL="udp:127.0.0.1:9999"
 SERIAL="null"
 
@@ -197,7 +196,13 @@ make_encrypted_root() {
         export initdir=$TESTDIR/overlay/source
         . $basedir/dracut-functions.sh
         mkdir -p "$initdir"
-        (cd "$initdir"; mkdir -p dev sys proc etc var/run tmp )
+        (
+            cd "$initdir"; mkdir -p dev sys proc etc var/run tmp
+            mkdir -p root usr/bin usr/lib usr/lib64 usr/sbin
+            for i in bin sbin lib lib64; do
+                ln -sfnr usr/$i $i
+            done
+        )
         inst_multiple sh df free ls shutdown poweroff stty cat ps ln ip \
             mount dmesg mkdir cp ping
         for _terminfodir in /lib/terminfo /etc/terminfo /usr/share/terminfo; do
@@ -215,6 +220,13 @@ make_encrypted_root() {
     (
         export initdir=$TESTDIR/overlay
         . $basedir/dracut-functions.sh
+        (
+            cd "$initdir"; mkdir -p dev sys proc etc var/run tmp
+            mkdir -p root usr/bin usr/lib usr/lib64 usr/sbin
+            for i in bin sbin lib lib64; do
+                ln -sfnr usr/$i $i
+            done
+        )
         inst_multiple mke2fs poweroff cp umount tune2fs
         inst_hook emergency 000 ./hard-off.sh
         inst_hook initqueue 01 ./create-root.sh
@@ -226,7 +238,7 @@ make_encrypted_root() {
     # We do it this way so that we do not risk trashing the host mdraid
     # devices, volume groups, encrypted partitions, etc.
     $basedir/dracut.sh -l -i $TESTDIR/overlay / \
-        -m "dash crypt lvm mdraid udev-rules base rootfs-block kernel-modules" \
+        -m "dash crypt lvm mdraid udev-rules base rootfs-block fs-lib kernel-modules" \
         -d "piix ide-gd_mod ata_piix ext2 ext3 sd_mod" \
         -f $TESTDIR/initramfs.makeroot $KVERSION || return 1
     rm -rf -- $TESTDIR/overlay
@@ -255,7 +267,13 @@ make_client_root() {
         export initdir=$TESTDIR/mnt
         . $basedir/dracut-functions.sh
         mkdir -p "$initdir"
-        (cd "$initdir"; mkdir -p dev sys proc etc var/run tmp )
+        (
+            cd "$initdir"; mkdir -p dev sys proc etc var/run tmp
+            mkdir -p root usr/bin usr/lib usr/lib64 usr/sbin
+            for i in bin sbin lib lib64; do
+                ln -sfnr usr/$i $i
+            done
+        )
         inst_multiple sh ls shutdown poweroff stty cat ps ln ip \
             dmesg mkdir cp ping
         for _terminfodir in /lib/terminfo /etc/terminfo /usr/share/terminfo; do
@@ -352,7 +370,7 @@ test_setup() {
     )
 
     sudo $basedir/dracut.sh -l -i $TESTDIR/overlay / \
-        -m "dash udev-rules rootfs-block base debug kernel-modules" \
+        -m "dash udev-rules rootfs-block fs-lib base debug kernel-modules" \
         -d "af_packet piix ide-gd_mod ata_piix ext2 ext3 sd_mod e1000" \
         -f $TESTDIR/initramfs.server $KVERSION || return 1
 

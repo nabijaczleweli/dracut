@@ -26,6 +26,15 @@ test_setup() {
 	export initdir=$TESTDIR/overlay/source
 	mkdir -p $initdir
 	. $basedir/dracut-functions.sh
+        (
+            cd "$initdir"
+            mkdir -p -- dev sys proc etc var/run tmp
+            mkdir -p root usr/bin usr/lib usr/lib64 usr/sbin
+            for i in bin sbin lib lib64; do
+                ln -sfnr usr/$i $i
+            done
+            mkdir -p -- var/lib/nfs/rpc_pipefs
+        )
 	inst_multiple sh df free ls shutdown poweroff stty cat ps ln ip route \
 	    mount dmesg ifconfig dhclient mkdir cp ping dhclient \
 	    umount strace less setsid
@@ -39,7 +48,6 @@ test_setup() {
         inst_simple /etc/os-release
 	inst ./test-init.sh /sbin/init
 	find_binary plymouth >/dev/null && inst_multiple plymouth
-	(cd "$initdir"; mkdir -p dev sys proc etc var/run tmp )
 	cp -a /etc/ld.so.conf* $initdir/etc
 	sudo ldconfig -r "$initdir"
     )
@@ -58,7 +66,7 @@ test_setup() {
     # We do it this way so that we do not risk trashing the host mdraid
     # devices, volume groups, encrypted partitions, etc.
     $basedir/dracut.sh -l -i $TESTDIR/overlay / \
-	-m "dash udev-rules base rootfs-block kernel-modules" \
+	-m "dash udev-rules base rootfs-block fs-lib kernel-modules" \
 	-d "piix ide-gd_mod ata_piix ext3 sd_mod" \
         --nomdadmconf \
 	-f $TESTDIR/initramfs.makeroot $KVERSION || return 1

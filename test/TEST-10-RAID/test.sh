@@ -5,7 +5,7 @@ KVERSION=${KVERSION-$(uname -r)}
 
 # Uncomment this to debug failures
 #DEBUGFAIL="rd.shell rd.udev.log-priority=debug loglevel=70 systemd.log_target=kmsg"
-#DEBUGFAIL="rd.break rd.shell"
+#DEBUGFAIL="rd.break rd.shell rd.debug debug"
 test_run() {
     DISKIMAGE=$TESTDIR/TEST-10-RAID-root.img
     $testdir/run-qemu \
@@ -27,8 +27,15 @@ test_setup() {
     # Create what will eventually be our root filesystem onto an overlay
     (
 	export initdir=$TESTDIR/overlay/source
-	(mkdir -p "$initdir"; cd "$initdir"; mkdir -p dev sys proc etc var/run tmp run)
 	. $basedir/dracut-functions.sh
+	(
+            cd "$initdir"
+            mkdir -p -- dev sys proc etc var/run tmp
+            mkdir -p root usr/bin usr/lib usr/lib64 usr/sbin
+            for i in bin sbin lib lib64; do
+                ln -sfnr usr/$i $i
+            done
+        )
 	inst_multiple sh df free ls shutdown poweroff stty cat ps ln ip route \
 	    mount dmesg ifconfig dhclient mkdir cp ping dhclient
         for _terminfodir in /lib/terminfo /etc/terminfo /usr/share/terminfo; do
@@ -60,7 +67,7 @@ test_setup() {
     # We do it this way so that we do not risk trashing the host mdraid
     # devices, volume groups, encrypted partitions, etc.
     $basedir/dracut.sh -l -i $TESTDIR/overlay / \
-	-m "dash crypt lvm mdraid udev-rules base rootfs-block kernel-modules" \
+	-m "dash crypt lvm mdraid udev-rules base rootfs-block fs-lib kernel-modules" \
 	-d "piix ide-gd_mod ata_piix ext2 sd_mod" \
         --nomdadmconf \
 	-f $TESTDIR/initramfs.makeroot $KVERSION || return 1
